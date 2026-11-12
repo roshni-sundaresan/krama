@@ -1,0 +1,65 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  typescript:
+    # Idealake self-hosted runners (GitHub-hosted runners are not used for internal code).
+    runs-on: [self-hosted, linux]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.28.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.4
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Prisma generate + validate
+        run: |
+          pnpm --filter @krama/api exec prisma generate
+          pnpm --filter @krama/api exec prisma validate
+        env:
+          DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
+      - name: Build (topological)
+        run: pnpm build
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - name: Unit tests
+        run: pnpm test
+      - name: Dogfood guardrails on this repo (informational)
+        working-directory: packages/guardrails
+        run: |
+          node --input-type=module -e "import { DEFAULT_GUARDRAILS } from '@krama/shared'; console.log(JSON.stringify(DEFAULT_GUARDRAILS))" > "$RUNNER_TEMP/guardrails.json"
+          node dist/cli.js check ../.. --rules "$RUNNER_TEMP/guardrails.json" --mode guided || true
+
+  python:
+    runs-on: [self-hosted, linux]
+    defaults:
+      run:
+        working-directory: workers/ai
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: python -m pip install -e '.[dev]'
+      - run: ruff check . && ruff format --check .
+      - run: pytest -q
+
+  compose:
+    runs-on: [self-hosted, linux]
+    steps:
+      - uses: actions/checkout@v4
+      - run: cp .env.example .env && docker compose -f infra/docker-compose.yml config --quiet

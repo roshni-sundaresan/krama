@@ -1,0 +1,57 @@
+# Krama guardrail check — copy into generated repositories as .github/workflows/krama-guardrails.yml
+# and mark the "krama-guardrails" job as a REQUIRED status check in branch protection.
+#
+# Enforcement is server-side on purpose: rules and approved exceptions are fetched from the
+# Krama API (source of truth), never read from the repository, because local machines and
+# repo files can be tampered with.
+#
+# Required repository/org configuration:
+#   vars.KRAMA_SERVER          e.g. https://krama.idealake.internal
+#   vars.KRAMA_PROJECT_ID      Krama project id
+#   secrets.KRAMA_CI_TOKEN     service token with read access to the project's guardrails
+#                              (TODO: dedicated CI service principal; Phase 1 can use a CLI token)
+#   vars.KRAMA_GUARDRAILS_VERSION  checker version published to the internal npm registry
+name: krama-guardrails
+
+on:
+  pull_request:
+  merge_group:
+
+permissions:
+  contents: read
+
+jobs:
+  krama-guardrails:
+    runs-on: self-hosted
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install checker
+        # TODO: point npm at Idealake's internal registry where @krama/guardrails is published.
+        run: npm install -g "@krama/guardrails@${{ vars.KRAMA_GUARDRAILS_VERSION }}"
+
+      - name: Fetch effective guardrails from Krama (rules + approved exceptions + depth mode)
+        env:
+          KRAMA_SERVER: ${{ vars.KRAMA_SERVER }}
+          KRAMA_PROJECT_ID: ${{ vars.KRAMA_PROJECT_ID }}
+          KRAMA_CI_TOKEN: ${{ secrets.KRAMA_CI_TOKEN }}
+        run: |
+          set -euo pipefail
+          curl -fsS -H "Authorization: Bearer ${KRAMA_CI_TOKEN}" \
+            "${KRAMA_SERVER}/api/projects/${KRAMA_PROJECT_ID}/guardrails/effective" -o "$RUNNER_TEMP/effective.json"
+          jq '.guardrails' "$RUNNER_TEMP/effective.json" > "$RUNNER_TEMP/guardrails.json"
+          jq '.exceptions' "$RUNNER_TEMP/effective.json" > "$RUNNER_TEMP/exceptions.json"
+          echo "KRAMA_MODE=$(jq -r '.mode' "$RUNNER_TEMP/effective.json")" >> "$GITHUB_ENV"
+
+      - name: krama-guardrails check
+        run: |
+          krama-guardrails check . \
+            --rules "$RUNNER_TEMP/guardrails.json" \
+            --exceptions "$RUNNER_TEMP/exceptions.json" \
+            --mode "$KRAMA_MODE" \
+            --change-ref "${{ github.head_ref || github.ref_name }}"

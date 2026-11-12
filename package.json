@@ -1,0 +1,32 @@
+{
+  "name": "krama",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Krama — Idealake AI Engineering Platform (Phase 1 skeleton)",
+  "type": "module",
+  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "build": "pnpm -r --workspace-concurrency=1 build",
+    "build:libs": "pnpm --filter @krama/shared --filter @krama/guardrails --filter @krama/workflows --filter @krama/cli build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "lint": "eslint .",
+    "db:generate": "pnpm --filter @krama/api prisma:generate",
+    "db:migrate": "pnpm --filter @krama/api prisma:migrate",
+    "db:seed": "pnpm --filter @krama/api db:seed",
+    "dev:api": "pnpm --filter @krama/api dev",
+    "dev:web": "pnpm --filter @krama/web dev",
+    "dev:worker": "pnpm --filter @krama/workflows worker"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "26.6.6",
+    "eslint": "10.14.0",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.72.2",
+    "vitest": "5.1.0"
+  }
+}

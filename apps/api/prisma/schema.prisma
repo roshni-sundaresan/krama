@@ -1,0 +1,508 @@
+// Krama artefact model — Phase 1.
+// Rules: every table carries tenantId (multi-tenancy from day one);
+// AuditLog is append-only (UPDATE/DELETE blocked by a trigger in the init migration).
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+  binaryTargets   = ["native", "linux-musl-openssl-3.0.x", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [vector]
+}
+
+enum Role {
+  BA
+  Developer
+  LeadArchitect
+  Approver
+  Admin
+  Challenger
+}
+
+enum DepthMode {
+  SKELETON
+  GUIDED
+  GOVERNED
+}
+
+enum ProjectPhase {
+  INPUTS
+  REQUIREMENTS
+  DOCUMENTS
+  BUILD
+}
+
+enum SourceKind {
+  UPLOAD
+  IDHI_MEETING
+}
+
+enum RequirementType {
+  FUNCTIONAL
+  NON_FUNCTIONAL
+  CONSTRAINT
+}
+
+enum Priority {
+  MUST
+  SHOULD
+  COULD
+}
+
+enum ArtefactStatus {
+  DRAFT
+  IN_REVIEW
+  APPROVED
+  RETURNED
+  REJECTED
+  SUPERSEDED
+}
+
+enum GapSeverity {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum GapStatus {
+  OPEN
+  RESOLVED
+  ACCEPTED
+  SUPERSEDED
+}
+
+enum DocumentType {
+  BRD
+  SOW
+  FSD
+}
+
+enum DecisionStatus {
+  PROPOSED
+  ACCEPTED
+  SUPERSEDED
+}
+
+enum RuleLevel {
+  BLOCK
+  WARN
+}
+
+enum ExceptionScope {
+  PROJECT
+  CHANGE
+}
+
+enum ExceptionStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum ApprovalSubject {
+  REQUIREMENTS
+  DOCUMENTS
+  EXCEPTION
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  RETURNED
+  REJECTED
+}
+
+enum RunStatus {
+  RUNNING
+  WAITING
+  COMPLETED
+  REJECTED
+  FAILED
+}
+
+enum CapabilityKind {
+  AGENT
+  TOOL
+  PRODUCT
+}
+
+enum CapabilityStatus {
+  DRAFT
+  ACTIVE
+  DEPRECATED
+}
+
+model Tenant {
+  id            String   @id @default(cuid())
+  slug          String   @unique
+  name          String
+  /// Entra ID (Azure AD) directory id mapped to this tenant for SSO.
+  entraTenantId String?  @unique
+  createdAt     DateTime @default(now())
+
+  users              User[]
+  projects           Project[]
+  sourceItems        SourceItem[]
+  sourceChunks       SourceChunk[]
+  requirements       Requirement[]
+  gaps               Gap[]
+  documents          Document[]
+  decisions          Decision[]
+  guardrailRuleSets  GuardrailRuleSet[]
+  guardrailRules     GuardrailRule[]
+  guardrailExceptions GuardrailException[]
+  approvals          Approval[]
+  workflowRuns       WorkflowRun[]
+  capabilities       Capability[]
+  auditLogs          AuditLog[]
+  tokenUsages        TokenUsage[]
+}
+
+model User {
+  id            String   @id @default(cuid())
+  tenantId      String
+  tenant        Tenant   @relation(fields: [tenantId], references: [id])
+  email         String
+  name          String
+  roles         Role[]
+  entraObjectId String?
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  projectsCreated     Project[]            @relation("ProjectCreatedBy")
+  approvalsRequested  Approval[]           @relation("ApprovalRequestedBy")
+  approvalsDecided    Approval[]           @relation("ApprovalDecidedBy")
+  exceptionsRequested GuardrailException[] @relation("ExceptionRequestedBy")
+  exceptionsDecided   GuardrailException[] @relation("ExceptionDecidedBy")
+
+  @@unique([tenantId, email])
+  @@index([tenantId])
+}
+
+model Project {
+  id              String       @id @default(cuid())
+  tenantId        String
+  tenant          Tenant       @relation(fields: [tenantId], references: [id])
+  name            String
+  description     String?
+  clientWork      Boolean      @default(false)
+  clientName      String?
+  projectType     String
+  technology      String
+  depthMode       DepthMode    @default(GUIDED)
+  targetPlatforms String[]
+  phase           ProjectPhase @default(INPUTS)
+  /// Coding tools developers may run locally via the Krama CLI (claude | copilot | codex).
+  approvedTools   String[]     @default(["claude"])
+  createdById     String
+  createdBy       User         @relation("ProjectCreatedBy", fields: [createdById], references: [id])
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  sourceItems  SourceItem[]
+  requirements Requirement[]
+  gaps         Gap[]
+  documents    Document[]
+  decisions    Decision[]
+  exceptions   GuardrailException[]
+  approvals    Approval[]
+  runs         WorkflowRun[]
+  tokenUsages  TokenUsage[]
+
+  @@index([tenantId])
+}
+
+model SourceItem {
+  id          String     @id @default(cuid())
+  tenantId    String
+  tenant      Tenant     @relation(fields: [tenantId], references: [id])
+  projectId   String
+  project     Project    @relation(fields: [projectId], references: [id])
+  kind        SourceKind
+  title       String
+  mimeType    String?
+  sizeBytes   Int?
+  /// Object key in MinIO/S3 (or local dev storage).
+  storageKey  String?
+  /// iDhi meeting id for IDHI_MEETING items.
+  externalRef String?
+  /// Extracted plain text used by the Documentation capability.
+  text        String?
+  metadata    Json       @default("{}")
+  createdById String
+  createdAt   DateTime   @default(now())
+
+  chunks SourceChunk[]
+
+  @@index([tenantId, projectId])
+}
+
+/// Retrieval chunks (pgvector). Embeddings populated later by the AI worker.
+model SourceChunk {
+  id           String                       @id @default(cuid())
+  tenantId     String
+  tenant       Tenant                       @relation(fields: [tenantId], references: [id])
+  sourceItemId String
+  sourceItem   SourceItem                   @relation(fields: [sourceItemId], references: [id])
+  ordinal      Int
+  text         String
+  embedding    Unsupported("vector(1024)")?
+  createdAt    DateTime                     @default(now())
+
+  @@unique([sourceItemId, ordinal])
+  @@index([tenantId])
+}
+
+model Requirement {
+  id          String          @id @default(cuid())
+  tenantId    String
+  tenant      Tenant          @relation(fields: [tenantId], references: [id])
+  projectId   String
+  project     Project         @relation(fields: [projectId], references: [id])
+  runId       String?
+  run         WorkflowRun?    @relation(fields: [runId], references: [id])
+  iteration   Int             @default(1)
+  code        String
+  title       String
+  description String
+  type        RequirementType
+  priority    Priority
+  status      ArtefactStatus  @default(DRAFT)
+  /// [{ sourceItemId, quote, location }] — every requirement must cite at least one source.
+  citations   Json
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  @@index([tenantId, projectId, status])
+}
+
+model Gap {
+  id                      String      @id @default(cuid())
+  tenantId                String
+  tenant                  Tenant      @relation(fields: [tenantId], references: [id])
+  projectId               String
+  project                 Project     @relation(fields: [projectId], references: [id])
+  runId                   String?
+  run                     WorkflowRun? @relation(fields: [runId], references: [id])
+  iteration               Int         @default(1)
+  category                String
+  description             String
+  severity                GapSeverity
+  relatedRequirementCodes String[]
+  status                  GapStatus   @default(OPEN)
+  createdAt               DateTime    @default(now())
+
+  @@index([tenantId, projectId, status])
+}
+
+model Document {
+  id        String         @id @default(cuid())
+  tenantId  String
+  tenant    Tenant         @relation(fields: [tenantId], references: [id])
+  projectId String
+  project   Project        @relation(fields: [projectId], references: [id])
+  runId     String?
+  run       WorkflowRun?   @relation(fields: [runId], references: [id])
+  type      DocumentType
+  version   Int
+  status    ArtefactStatus @default(DRAFT)
+  /// { title, sections: [{ heading, statements: [{ text, citations[], requirementCodes[], aiSuggested }] }] }
+  content   Json
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  @@unique([projectId, type, version])
+  @@index([tenantId, projectId])
+}
+
+/// Architecture Decision Record.
+model Decision {
+  id           String         @id @default(cuid())
+  tenantId     String
+  tenant       Tenant         @relation(fields: [tenantId], references: [id])
+  projectId    String
+  project      Project        @relation(fields: [projectId], references: [id])
+  number       Int
+  title        String
+  context      String
+  decision     String
+  consequences String
+  status       DecisionStatus @default(PROPOSED)
+  createdById  String
+  createdAt    DateTime       @default(now())
+
+  @@unique([projectId, number])
+  @@index([tenantId])
+}
+
+/// Team guardrails. Edits create a new version; exactly one active version per tenant+name.
+model GuardrailRuleSet {
+  id          String          @id @default(cuid())
+  tenantId    String
+  tenant      Tenant          @relation(fields: [tenantId], references: [id])
+  name        String
+  version     Int
+  isActive    Boolean         @default(false)
+  changeNote  String?
+  createdById String
+  createdAt   DateTime        @default(now())
+  rules       GuardrailRule[]
+
+  @@unique([tenantId, name, version])
+  @@index([tenantId, isActive])
+}
+
+model GuardrailRule {
+  id          String           @id @default(cuid())
+  tenantId    String
+  tenant      Tenant           @relation(fields: [tenantId], references: [id])
+  ruleSetId   String
+  ruleSet     GuardrailRuleSet @relation(fields: [ruleSetId], references: [id])
+  /// Stable key referenced by exceptions and the checker, e.g. "no-hardcoded-secrets".
+  key         String
+  name        String
+  /// no-secrets | max-file-length | max-function-length | prohibited-pattern | require-tests-dir
+  type        String
+  level       RuleLevel
+  nonWaivable Boolean          @default(false)
+  appliesTo   String[]
+  params      Json             @default("{}")
+  description String?
+
+  @@unique([ruleSetId, key])
+  @@index([tenantId])
+}
+
+model GuardrailException {
+  id            String          @id @default(cuid())
+  tenantId      String
+  tenant        Tenant          @relation(fields: [tenantId], references: [id])
+  projectId     String
+  project       Project         @relation(fields: [projectId], references: [id])
+  ruleKey       String
+  reason        String
+  scope         ExceptionScope
+  changeRef     String?
+  paths         String[]
+  expiresAt     DateTime
+  status        ExceptionStatus @default(PENDING)
+  requestedById String
+  requestedBy   User            @relation("ExceptionRequestedBy", fields: [requestedById], references: [id])
+  decidedById   String?
+  decidedBy     User?           @relation("ExceptionDecidedBy", fields: [decidedById], references: [id])
+  decidedAt     DateTime?
+  decisionNote  String?
+  createdAt     DateTime        @default(now())
+
+  @@index([tenantId, projectId, status])
+}
+
+model Approval {
+  id            String          @id @default(cuid())
+  tenantId      String
+  tenant        Tenant          @relation(fields: [tenantId], references: [id])
+  projectId     String?
+  project       Project?        @relation(fields: [projectId], references: [id])
+  subjectType   ApprovalSubject
+  /// WorkflowRun id for REQUIREMENTS/DOCUMENTS, GuardrailException id for EXCEPTION.
+  subjectId     String
+  runId         String?
+  status        ApprovalStatus  @default(PENDING)
+  summary       String
+  requestedById String
+  requestedBy   User            @relation("ApprovalRequestedBy", fields: [requestedById], references: [id])
+  decidedById   String?
+  decidedBy     User?           @relation("ApprovalDecidedBy", fields: [decidedById], references: [id])
+  decidedAt     DateTime?
+  comments      String?
+  createdAt     DateTime        @default(now())
+
+  @@index([tenantId, status])
+}
+
+model WorkflowRun {
+  id                 String    @id @default(cuid())
+  tenantId           String
+  tenant             Tenant    @relation(fields: [tenantId], references: [id])
+  projectId          String
+  project            Project   @relation(fields: [projectId], references: [id])
+  workflowType       String
+  temporalWorkflowId String?   @unique
+  status             RunStatus @default(RUNNING)
+  stage              String    @default("STARTING")
+  input              Json      @default("{}")
+  error              String?
+  startedById        String
+  startedAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  finishedAt         DateTime?
+
+  requirements Requirement[]
+  gaps         Gap[]
+  documents    Document[]
+  tokenUsages  TokenUsage[]
+
+  @@index([tenantId, projectId])
+}
+
+/// Capability registry: agents, tools and products plugged into the orchestration layer.
+model Capability {
+  id          String           @id @default(cuid())
+  tenantId    String
+  tenant      Tenant           @relation(fields: [tenantId], references: [id])
+  name        String
+  version     String
+  kind        CapabilityKind
+  status      CapabilityStatus @default(DRAFT)
+  description String?
+  inputs      String[]
+  outputs     String[]
+  permissions String[]
+  evalScore   Float?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@unique([tenantId, name, version])
+}
+
+/// Append-only audit trail. Never updated or deleted (enforced by DB trigger).
+model AuditLog {
+  id         String   @id @default(cuid())
+  tenantId   String
+  tenant     Tenant   @relation(fields: [tenantId], references: [id])
+  actorId    String?
+  actorType  String   @default("user")
+  action     String
+  entityType String
+  entityId   String?
+  data       Json     @default("{}")
+  createdAt  DateTime @default(now())
+
+  @@index([tenantId, createdAt])
+  @@index([tenantId, entityType, entityId])
+}
+
+model TokenUsage {
+  id           String       @id @default(cuid())
+  tenantId     String
+  tenant       Tenant       @relation(fields: [tenantId], references: [id])
+  projectId    String?
+  project      Project?     @relation(fields: [projectId], references: [id])
+  runId        String?
+  run          WorkflowRun? @relation(fields: [runId], references: [id])
+  provider     String
+  modelId      String
+  tier         String
+  task         String
+  inputTokens  Int
+  outputTokens Int
+  costUsd      Decimal      @db.Decimal(12, 6)
+  createdAt    DateTime     @default(now())
+
+  @@index([tenantId, createdAt])
+}
