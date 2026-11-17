@@ -1,183 +1,163 @@
 /**
- * Seed: demo tenant, one user per role, default guardrail set, capability registry,
- * a fresh sample project (INPUTS phase) and a ready-to-build project (BUILD phase)
- * so `krama pull` works immediately. Idempotent: safe to run repeatedly.
+ * Seed: demo tenant, one user per role, capability registry and three projects that show both paths:
+ *   LOP  Loan Origination Portal  — BFSI bank, at intake (BA path demo: masking, BRD drafting, audit, approval)
+ *   ISA  Investor Services App    — Mutual Funds, BRD signed off, pack approved (Tech Architect and developer demo)
+ *   DOB  Dealer Onboarding        — General, new project with nothing uploaded
+ * Idempotent: safe to run repeatedly.
  */
-import { PrismaClient, type Role } from "@prisma/client";
-import { DEFAULT_GUARDRAILS } from "@krama/shared";
+import { PrismaClient, type Prisma, type Role } from "@prisma/client";
+import { BLUEPRINTS, BRD_SECTIONS, composeRules, findStack, maskPersonalData, regulationsFor } from "@krama/shared";
 
 const prisma = new PrismaClient();
 const TENANT_SLUG = process.env.DEFAULT_TENANT_SLUG ?? "idealake";
 
 const USERS: { email: string; name: string; roles: Role[] }[] = [
-  { email: "ba@idealake.local", name: "Ravi (BA)", roles: ["BA"] },
-  { email: "dev@idealake.local", name: "Dev Developer", roles: ["Developer"] },
-  { email: "architect@idealake.local", name: "Meera (Lead Architect)", roles: ["LeadArchitect"] },
-  { email: "approver@idealake.local", name: "Anil (Approver)", roles: ["Approver"] },
-  { email: "admin@idealake.local", name: "Platform Admin", roles: ["Admin"] },
-  { email: "challenger@idealake.local", name: "Chandra (Challenger)", roles: ["Challenger"] },
+  { email: "admin@idealake.local", name: "Kavita Iyer", roles: ["SuperAdmin"] },
+  { email: "architect@idealake.local", name: "Meera Nair", roles: ["TechArchitect"] },
+  { email: "balead@idealake.local", name: "Sanjay Kulkarni", roles: ["BALead"] },
+  { email: "ba@idealake.local", name: "Ravi Menon", roles: ["BA"] },
+  { email: "uxlead@idealake.local", name: "Tara Shah", roles: ["UIUXLead"] },
+  { email: "designer@idealake.local", name: "Neha Joshi", roles: ["Designer"] },
+  { email: "dev@idealake.local", name: "Arjun Rao", roles: ["Developer"] },
+  { email: "dev2@idealake.local", name: "Fatima Khan", roles: ["Developer"] },
+  { email: "leadtester@idealake.local", name: "Vikram Das", roles: ["LeadTester"] },
+  { email: "tester@idealake.local", name: "Pooja Patil", roles: ["Tester"] },
+  { email: "infra@idealake.local", name: "Imran Sheikh", roles: ["InfraLead"] },
 ];
+
+const LOP_SOW = `Statement of Work — Loan Origination Portal v1.2
+Scope: Idealake will build a loan origination portal for personal loans on web and mobile.
+The portal must let applicants apply online, upload KYC documents and track their application.
+Credit officers must review applications in a work queue.
+Out of scope: loan disbursal, collections and core banking changes.
+Timeline: 16 weeks from BRD sign-off.`;
+
+const LOP_MOM = `LOP-MOM-02 Credit workflow (converted from notes)
+Attendees: Asha Rao (asha.rao@clientbank.in, 98200 11223), Ravi (BA)
+A credit manager must approve every loan above 5 lakh before disbursal.
+The system shall keep an audit trail of every credit decision.
+Managers want to export monthly approval statistics as CSV.`;
 
 async function main(): Promise<void> {
   const tenant = await prisma.tenant.upsert({
     where: { slug: TENANT_SLUG },
-    create: { slug: TENANT_SLUG, name: "Idealake (demo)", entraTenantId: process.env.ENTRA_TENANT_ID || null },
+    create: { slug: TENANT_SLUG, name: "Idealake", entraTenantId: process.env.ENTRA_TENANT_ID || null },
     update: {},
   });
-
-  const users: Record<string, string> = {};
-  for (const u of USERS) {
+  const t = tenant.id;
+  const u: Record<string, string> = {};
+  for (const x of USERS) {
     const row = await prisma.user.upsert({
-      where: { tenantId_email: { tenantId: tenant.id, email: u.email } },
-      create: { tenantId: tenant.id, ...u },
-      update: { name: u.name, roles: u.roles },
+      where: { tenantId_email: { tenantId: t, email: x.email } },
+      create: { tenantId: t, ...x },
+      update: { name: x.name, roles: x.roles, active: true },
     });
-    users[u.email] = row.id;
+    u[x.email.split("@")[0]!] = row.id;
   }
-  const architect = users["architect@idealake.local"]!;
-  const ba = users["ba@idealake.local"]!;
 
-  if (!(await prisma.guardrailRuleSet.findFirst({ where: { tenantId: tenant.id } }))) {
-    await prisma.guardrailRuleSet.create({
+  const capabilities = [
+    { name: "documentation", version: "0.2.0", kind: "AGENT" as const, status: "ACTIVE" as const, description: "Requirements with citations and Given/When/Then, lens findings, 20-section BRD", inputs: ["masked-sources"], outputs: ["requirements", "lens-findings", "brd"], permissions: ["model:sonnet", "read:masked-sources"] },
+    { name: "deep-audit", version: "0.1.0", kind: "AGENT" as const, status: "ACTIVE" as const, description: "BRD Deep Audit at submission (BA blueprint Appendix A)", inputs: ["brd"], outputs: ["deep-audit-report"], permissions: ["model:opus"] },
+    { name: "guardrail-packs", version: "0.1.0", kind: "TOOL" as const, status: "ACTIVE" as const, description: "Domain and stack guardrails, blueprints, rules pack and checklist", inputs: ["project", "stack"], outputs: ["pack"], permissions: [] },
+    { name: "project-check", version: "0.1.0", kind: "TOOL" as const, status: "ACTIVE" as const, description: "Optional check of a linked repository or uploaded project", inputs: ["repository"], outputs: ["check-report"], permissions: ["read:repo"] },
+  ];
+  for (const c of capabilities) {
+    await prisma.capability.upsert({ where: { tenantId_name_version: { tenantId: t, name: c.name, version: c.version } }, create: { tenantId: t, ...c }, update: {} });
+  }
+
+  const team = (ids: string[]) => ids.map((userId) => ({ tenantId: t, userId, addedById: u.architect! }));
+
+  // ---------- LOP: BFSI bank at intake ----------
+  if (!(await prisma.project.findUnique({ where: { tenantId_code: { tenantId: t, code: "LOP" } } }))) {
+    const masked = maskPersonalData(LOP_MOM);
+    await prisma.project.create({
       data: {
-        tenantId: tenant.id,
-        name: DEFAULT_GUARDRAILS.name,
-        version: 1,
-        isActive: true,
-        changeNote: "Initial default guardrails (seed)",
-        createdById: architect,
-        rules: {
-          create: DEFAULT_GUARDRAILS.rules.map((r) => ({
-            tenantId: tenant.id,
-            key: r.id,
-            name: r.name,
-            type: r.type,
-            level: r.level,
-            nonWaivable: r.nonWaivable,
-            appliesTo: r.appliesTo,
-            params: r.params as object,
-            description: r.description,
+        tenantId: t, code: "LOP", name: "Loan Origination Portal", clientName: "Client A Bank", domain: "BFSI", entityType: "COMMERCIAL_BANK",
+        description: "Personal loan applications on web and mobile with a credit officer work queue.",
+        platforms: ["Web", "Mobile iOS", "Mobile Android", "API"], sowReference: "SOW-2026-118 v1.2",
+        clientSignoffOwner: "Asha Rao, Head of Retail Lending, asha.rao@clientbank.in",
+        regulations: "DPDP Act; RBI Cybersecurity Directions 2026", integrations: "Core banking (SOAP), credit bureau, SMS gateway",
+        createdById: u.ba!,
+        members: { create: team([u.ba!, u.balead!, u.architect!, u.dev!, u.uxlead!, u.leadtester!]) },
+        sourceItems: {
+          create: [
+            { tenantId: t, kind: "UPLOAD", title: "LOP_SOW_LoanOrigination_v1.2.txt", mimeType: "text/plain", text: LOP_SOW, maskedText: LOP_SOW, docType: "SOW", version: "1.2", docDate: "2026-10-28", provider: "Idealake", createdById: u.ba! },
+            { tenantId: t, kind: "UPLOAD", title: "LOP-MOM-02 Credit workflow.txt", mimeType: "text/plain", text: LOP_MOM, maskedText: masked.masked, piiFindings: masked.findings as unknown as Prisma.InputJsonValue, personalData: true, docType: "MOM", version: "1", docDate: "2026-11-07", provider: "Ravi Menon", createdById: u.ba! },
+          ],
+        },
+      },
+    });
+  }
+
+  // ---------- ISA: Mutual Funds, BRD signed off, pack approved ----------
+  if (!(await prisma.project.findUnique({ where: { tenantId_code: { tenantId: t, code: "ISA" } } }))) {
+    const p = await prisma.project.create({
+      data: {
+        tenantId: t, code: "ISA", name: "Investor Services App", clientName: "Client B Asset Management", domain: "MUTUAL_FUNDS", entityType: "AMC",
+        domainConfirmed: true, domainConfirmedById: u.architect, description: "Investor app for SIPs, redemptions and statements.",
+        platforms: ["Mobile iOS", "Mobile Android", "API"], existingProduction: true, accessibilityRequired: true, sowReference: "SOW-2026-104 v1.0",
+        clientSignoffOwner: "R. Varma, Digital Head, r.varma@clientamc.in", integrations: "Registrar and transfer agent API, payment gateway",
+        phase: "DEVELOPMENT", stackKey: "flutter-nest", stackRationale: "Existing app is Flutter; team has deepest Flutter experience; NestJS matches the current API.",
+        stackSelectedById: u.architect, stackSelectedAt: new Date("2026-11-10T10:00:00Z"), createdById: u.ba!,
+        members: { create: team([u.ba!, u.balead!, u.architect!, u.dev!, u.dev2!, u.leadtester!, u.tester!]) },
+      },
+    });
+    const src = await prisma.sourceItem.create({
+      data: { tenantId: t, projectId: p.id, kind: "UPLOAD", title: "ISA-MOM-01 Scope.txt", mimeType: "text/plain", text: "Investors must be able to start a SIP from the app. Redemptions must reach the registrar within the cut-off time.", maskedText: "Investors must be able to start a SIP from the app. Redemptions must reach the registrar within the cut-off time.", docType: "MOM", version: "1", docDate: "2026-10-20", provider: "Ravi Menon", createdById: u.ba! },
+    });
+    const cite = (q: string) => [{ sourceItemId: src.id, quote: q, location: "line 1" }];
+    const doc = await prisma.document.create({
+      data: {
+        tenantId: t, projectId: p.id, type: "BRD", version: 1, status: "CLIENT_SIGNED_OFF", createdById: u.ba!, approvedById: u.balead, approvedAt: new Date("2026-11-08T09:00:00Z"), submittedAt: new Date("2026-11-07T09:00:00Z"),
+        generation: { model: "stub-sonnet", provider: "stub", promptVersions: { draftBrd: "brd-20/1" } },
+        content: {
+          title: "BRD v1 — Investor Services App",
+          sections: BRD_SECTIONS.map((h) => ({
+            heading: h,
+            statements: h === "Functional requirements"
+              ? [{ text: "FR-001: Investors must be able to start a SIP from the app.", citations: cite("Investors must be able to start a SIP from the app."), requirementCodes: ["FR-001"], aiSuggested: false }]
+              : [{ text: `${h}: confirmed with the client in the scope workshop.`, citations: [], requirementCodes: [], aiSuggested: true, confirmed: true }],
           })),
         },
       },
     });
-  }
-
-  const capabilities = [
-    { name: "documentation", version: "0.1.0", kind: "AGENT" as const, status: "ACTIVE" as const, description: "Structures requirements with citations, gap report, drafts BRD/SOW/FSD", inputs: ["source-items"], outputs: ["requirements", "gaps", "documents"], permissions: ["model:sonnet", "model:haiku", "read:sources"], evalScore: null },
-    { name: "execution-wizard", version: "0.1.0", kind: "TOOL" as const, status: "ACTIVE" as const, description: "Context pack + local CLI codegen with approved tools", inputs: ["approved-requirements", "adr", "guardrails"], outputs: ["context-pack"], permissions: ["read:requirements"], evalScore: null },
-    { name: "guardrail-checker", version: "0.1.0", kind: "TOOL" as const, status: "ACTIVE" as const, description: "Server-side guardrail check (GitHub required status)", inputs: ["repository", "guardrails", "exceptions"], outputs: ["check-report"], permissions: ["read:repo"], evalScore: null },
-    { name: "kshana", version: "0.0.0", kind: "PRODUCT" as const, status: "DRAFT" as const, description: "Future plugin — not in Phase 1", inputs: [], outputs: [], permissions: [], evalScore: null },
-  ];
-  for (const c of capabilities) {
-    await prisma.capability.upsert({
-      where: { tenantId_name_version: { tenantId: tenant.id, name: c.name, version: c.version } },
-      create: { tenantId: tenant.id, ...c },
-      update: {},
+    await prisma.requirement.createMany({
+      data: [
+        { tenantId: t, projectId: p.id, documentId: doc.id, code: "FR-001", title: "Start a SIP", description: "Investors must be able to start a SIP from the app.", type: "FUNCTIONAL", priority: "MUST", citations: cite("Investors must be able to start a SIP from the app."), acceptanceCriteria: [{ given: "a KYC-verified investor", when: "they choose a scheme and amount and confirm", then: "a SIP is registered and a confirmation is shown" }], confirmed: true, confirmedById: u.ba },
+        { tenantId: t, projectId: p.id, documentId: doc.id, code: "CON-001", title: "Redemption cut-off", description: "Redemptions must reach the registrar within the cut-off time.", type: "CONSTRAINT", priority: "MUST", citations: cite("Redemptions must reach the registrar within the cut-off time."), confirmed: true, confirmedById: u.ba },
+      ],
     });
-  }
-
-  // Sample project at the start of the flow.
-  if (!(await prisma.project.findFirst({ where: { tenantId: tenant.id, name: "Claims Portal (sample)" } }))) {
-    const p = await prisma.project.create({
+    await prisma.deepAudit.create({ data: { tenantId: t, projectId: p.id, documentId: doc.id, documentVersion: 1, status: "READY_FOR_FSD", criticalCount: 0, ruleFindings: [], aiReport: { readiness_assessment: { status: "READY_FOR_FSD", confidence_score: 86, estimation_risk_level: "LOW", executive_summary: "Ready for FSD." }, adversarial_gap_matrix: [], sign_off_blocker_questions: [] }, createdById: u.ba! } });
+    await prisma.clientSignoff.create({ data: { tenantId: t, projectId: p.id, documentId: doc.id, signedByName: "R. Varma", signedByEmail: "r.varma@clientamc.in", signedOn: "2026-11-09", note: "Signed by email", recordedById: u.ba! } });
+    await prisma.decision.create({ data: { tenantId: t, projectId: p.id, number: 1, title: "Select technology stack: Flutter mobile + NestJS API", context: "Domain Mutual Funds (AMC); existing client production app.", decision: "Flutter for iOS and Android; NestJS on Node.js 22 LTS; PostgreSQL 16.", consequences: "Existing app is Flutter; team has deepest Flutter experience.", createdById: u.architect! } });
+    const stack = findStack("flutter-nest")!;
+    const rules = composeRules({ domain: "MUTUAL_FUNDS", entityType: "AMC", platforms: p.platforms, stackTopics: stack.topics, flags: ["existingProduction", "accessibility"] });
+    await prisma.guardrailPack.create({
       data: {
-        tenantId: tenant.id,
-        name: "Claims Portal (sample)",
-        description: "Insurance claims portal for a client. Import the iDhi meetings or upload BA notes, then run Documentation.",
-        clientWork: true,
-        clientName: "Demo Insurance Ltd",
-        projectType: "web-app",
-        technology: "typescript-node",
-        depthMode: "GUIDED",
-        targetPlatforms: ["web"],
-        approvedTools: ["claude", "copilot"],
-        createdById: ba,
+        tenantId: t, projectId: p.id, version: 1, status: "APPROVED", domain: "MUTUAL_FUNDS", entityType: "AMC", stackKey: stack.key, flags: ["existingProduction", "accessibility"],
+        content: { rules, blueprints: BLUEPRINTS, regulations: regulationsFor(rules), checklist: stack.checklist, stack: { key: stack.key, name: stack.name, layers: stack.layers } } as unknown as Prisma.InputJsonValue,
+        generatedById: u.architect!, approvedById: u.architect, approvedAt: new Date("2026-11-11T08:00:00Z"),
       },
     });
-    await prisma.sourceItem.create({
+    await prisma.checklistConfirmation.create({ data: { tenantId: t, projectId: p.id, userId: u.dev2!, packVersion: 1, items: stack.checklist.map((i) => ({ id: i.id, name: i.name, version: i.version, ticked: true })) as unknown as Prisma.InputJsonValue } });
+  }
+
+  // ---------- DOB: General, new ----------
+  if (!(await prisma.project.findUnique({ where: { tenantId_code: { tenantId: t, code: "DOB" } } }))) {
+    await prisma.project.create({
       data: {
-        tenantId: tenant.id,
-        projectId: p.id,
-        kind: "UPLOAD",
-        title: "ba-notes.md",
-        mimeType: "text/markdown",
-        text: "# BA notes\n- Claimants must be able to track claim status online.\n- The system shall notify officers when a claim is idle for 3 days.\n",
-        createdById: ba,
+        tenantId: t, code: "DOB", name: "Dealer Onboarding", clientName: "Client D Motors", domain: "GENERAL", platforms: ["Web"],
+        clientSignoffOwner: "Operations Head, ops.head@clientd.in", createdById: u.ba!, members: { create: team([u.ba!, u.balead!]) },
       },
     });
   }
 
-  // Project already through both gates, so the CLI can pull a context pack right away.
-  if (!(await prisma.project.findFirst({ where: { tenantId: tenant.id, name: "Leave Tracker (ready to build)" } }))) {
-    const p = await prisma.project.create({
-      data: {
-        tenantId: tenant.id,
-        name: "Leave Tracker (ready to build)",
-        description: "Internal tool; requirements and documents already approved.",
-        projectType: "web-app",
-        technology: "typescript-node",
-        depthMode: "GOVERNED",
-        targetPlatforms: ["web"],
-        approvedTools: ["claude", "codex"],
-        phase: "BUILD",
-        createdById: ba,
-      },
-    });
-    const src = await prisma.sourceItem.create({
-      data: {
-        tenantId: tenant.id,
-        projectId: p.id,
-        kind: "UPLOAD",
-        title: "leave-policy-notes.md",
-        mimeType: "text/markdown",
-        text: "Employees must be able to apply for leave.\nManagers must approve or reject leave requests.\nHR should see a monthly leave report.",
-        createdById: ba,
-      },
-    });
-    const reqs = [
-      ["REQ-001", "Apply for leave", "Employees must be able to apply for leave.", "FUNCTIONAL", "MUST", 1],
-      ["REQ-002", "Approve leave", "Managers must approve or reject leave requests.", "FUNCTIONAL", "MUST", 2],
-      ["REQ-003", "Monthly report", "HR should see a monthly leave report.", "FUNCTIONAL", "SHOULD", 3],
-    ] as const;
-    for (const [code, title, description, type, priority, line] of reqs) {
-      await prisma.requirement.create({
-        data: {
-          tenantId: tenant.id,
-          projectId: p.id,
-          code,
-          title,
-          description,
-          type,
-          priority,
-          status: "APPROVED",
-          citations: [{ sourceItemId: src.id, quote: description, location: `line ${line}` }],
-        },
-      });
-    }
-    await prisma.decision.create({
-      data: {
-        tenantId: tenant.id,
-        projectId: p.id,
-        number: 1,
-        title: "NestJS + PostgreSQL service with Next.js front end",
-        context: "Internal tool, small team, Idealake TypeScript blueprint.",
-        decision: "Use the Idealake typescript-node blueprint (NestJS API, Next.js web, PostgreSQL).",
-        consequences: "Standard CI, guardrails and deployment templates apply.",
-        status: "ACCEPTED",
-        createdById: architect,
-      },
-    });
-  }
-
-  await prisma.auditLog.create({
-    data: { tenantId: tenant.id, actorType: "system", action: "seed.applied", entityType: "tenant", entityId: tenant.id },
-  });
-  console.log(`Seeded tenant "${TENANT_SLUG}" with ${USERS.length} users. Dev logins: ${USERS.map((u) => u.email).join(", ")}`);
+  console.log(`Seeded tenant "${TENANT_SLUG}". Dev logins: ${USERS.map((x) => `${x.email} (${x.roles.join(", ")})`).join(", ")}`);
 }
 
 main()
   .catch((e) => {
     console.error(e);
-    process.exitCode = 1;
+    process.exit(1);
   })
   .finally(() => prisma.$disconnect());

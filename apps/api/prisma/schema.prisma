@@ -1,6 +1,6 @@
-// Krama artefact model — Phase 1.
-// Rules: every table carries tenantId (multi-tenancy from day one);
-// AuditLog is append-only (UPDATE/DELETE blocked by a trigger in the init migration).
+// Krama data model — BA path and Tech Architect / developer path (BRD v0.6, FSD v0.5 section 23).
+// Rules: every table carries tenantId; AuditLog is append-only (trigger in the init migration);
+// approved documents and packs are never edited, a change creates a new version.
 
 generator client {
   provider        = "prisma-client-js"
@@ -15,30 +15,65 @@ datasource db {
 }
 
 enum Role {
+  SuperAdmin
+  TechArchitect
+  BALead
   BA
+  UIUXLead
+  Designer
   Developer
-  LeadArchitect
-  Approver
-  Admin
-  Challenger
+  LeadTester
+  Tester
+  InfraLead
 }
 
-enum DepthMode {
-  SKELETON
-  GUIDED
-  GOVERNED
+enum Domain {
+  BFSI
+  MUTUAL_FUNDS
+  GENERAL
 }
 
-enum ProjectPhase {
-  INPUTS
-  REQUIREMENTS
-  DOCUMENTS
-  BUILD
+enum EntityType {
+  COMMERCIAL_BANK
+  NBFC_OTHER_BANK
+  PAYMENT_OPERATOR
+  INSURER
+  AMC
+  OTHER
+}
+
+enum Phase {
+  INTAKE
+  BRD
+  CLIENT_SIGNOFF
+  FSD
+  DESIGN
+  API_SPEC
+  STACK
+  DEVELOPMENT
+  TESTING
+}
+
+enum ProjectStatus {
+  ACTIVE
+  CANCELLED
+  CLOSED
 }
 
 enum SourceKind {
   UPLOAD
   IDHI_MEETING
+}
+
+enum DocTag {
+  SOW
+  MOM
+  PROCESS
+  POLICY
+  DESIGN
+  API_DOC
+  EXISTING_SYSTEM
+  OTHER
 }
 
 enum RequirementType {
@@ -53,74 +88,74 @@ enum Priority {
   COULD
 }
 
-enum ArtefactStatus {
-  DRAFT
-  IN_REVIEW
-  APPROVED
-  RETURNED
-  REJECTED
-  SUPERSEDED
+enum Lens {
+  L1
+  L2
+  L3
+  L4
+  L5
+  L6
 }
 
-enum GapSeverity {
+enum Severity {
   LOW
   MEDIUM
   HIGH
 }
 
-enum GapStatus {
+enum FindingStatus {
   OPEN
-  RESOLVED
-  ACCEPTED
-  SUPERSEDED
+  ANSWERED
+  DEFAULT_ACCEPTED
 }
 
 enum DocumentType {
   BRD
-  SOW
   FSD
+  API_SPEC
 }
 
-enum DecisionStatus {
-  PROPOSED
-  ACCEPTED
+enum DocStatus {
+  DRAFTING
+  DRAFT
+  IN_REVIEW
+  CHANGES_REQUESTED
+  APPROVED
+  CLIENT_SIGNED_OFF
   SUPERSEDED
 }
 
-enum RuleLevel {
-  BLOCK
-  WARN
+enum AuditStatus {
+  READY_FOR_FSD
+  NEEDS_CLARIFICATION
+  BLOCKED_HIGH_RISK
 }
 
-enum ExceptionScope {
-  PROJECT
-  CHANGE
+enum PackStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  REJECTED
+  SUPERSEDED
+  WITHDRAWN
+}
+
+enum CheckStatus {
+  RUNNING
+  COMPLETED
+  FAILED
 }
 
 enum ExceptionStatus {
-  PENDING
+  REQUESTED
   APPROVED
   REJECTED
-}
-
-enum ApprovalSubject {
-  REQUIREMENTS
-  DOCUMENTS
-  EXCEPTION
-}
-
-enum ApprovalStatus {
-  PENDING
-  APPROVED
-  RETURNED
-  REJECTED
+  REVOKED
 }
 
 enum RunStatus {
   RUNNING
-  WAITING
   COMPLETED
-  REJECTED
   FAILED
 }
 
@@ -140,113 +175,131 @@ model Tenant {
   id            String   @id @default(cuid())
   slug          String   @unique
   name          String
-  /// Entra ID (Azure AD) directory id mapped to this tenant for SSO.
   entraTenantId String?  @unique
   createdAt     DateTime @default(now())
 
-  users              User[]
-  projects           Project[]
-  sourceItems        SourceItem[]
-  sourceChunks       SourceChunk[]
-  requirements       Requirement[]
-  gaps               Gap[]
-  documents          Document[]
-  decisions          Decision[]
-  guardrailRuleSets  GuardrailRuleSet[]
-  guardrailRules     GuardrailRule[]
-  guardrailExceptions GuardrailException[]
-  approvals          Approval[]
-  workflowRuns       WorkflowRun[]
-  capabilities       Capability[]
-  auditLogs          AuditLog[]
-  tokenUsages        TokenUsage[]
+  users      User[]
+  projects   Project[]
+  auditLogs  AuditLog[]
 }
 
 model User {
-  id            String   @id @default(cuid())
+  id            String    @id @default(cuid())
   tenantId      String
-  tenant        Tenant   @relation(fields: [tenantId], references: [id])
+  tenant        Tenant    @relation(fields: [tenantId], references: [id])
   email         String
   name          String
   roles         Role[]
   entraObjectId String?
-  active        Boolean  @default(true)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  active        Boolean   @default(true)
+  lastSignInAt  DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
-  projectsCreated     Project[]            @relation("ProjectCreatedBy")
-  approvalsRequested  Approval[]           @relation("ApprovalRequestedBy")
-  approvalsDecided    Approval[]           @relation("ApprovalDecidedBy")
-  exceptionsRequested GuardrailException[] @relation("ExceptionRequestedBy")
-  exceptionsDecided   GuardrailException[] @relation("ExceptionDecidedBy")
+  memberships ProjectMember[]
 
   @@unique([tenantId, email])
   @@index([tenantId])
 }
 
-model Project {
-  id              String       @id @default(cuid())
-  tenantId        String
-  tenant          Tenant       @relation(fields: [tenantId], references: [id])
-  name            String
-  description     String?
-  clientWork      Boolean      @default(false)
-  clientName      String?
-  projectType     String
-  technology      String
-  depthMode       DepthMode    @default(GUIDED)
-  targetPlatforms String[]
-  phase           ProjectPhase @default(INPUTS)
-  /// Coding tools developers may run locally via the Krama CLI (claude | copilot | codex).
-  approvedTools   String[]     @default(["claude"])
-  createdById     String
-  createdBy       User         @relation("ProjectCreatedBy", fields: [createdById], references: [id])
-  createdAt       DateTime     @default(now())
-  updatedAt       DateTime     @updatedAt
+model ProjectMember {
+  id        String   @id @default(cuid())
+  tenantId  String
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id])
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  addedById String
+  createdAt DateTime @default(now())
 
+  @@unique([projectId, userId])
+  @@index([tenantId, userId])
+}
+
+model Project {
+  id                    String        @id @default(cuid())
+  tenantId              String
+  tenant                Tenant        @relation(fields: [tenantId], references: [id])
+  code                  String
+  name                  String
+  clientName            String
+  description           String?
+  domain                Domain
+  entityType            EntityType?
+  domainConfirmed       Boolean       @default(false)
+  domainConfirmedById   String?
+  platforms             String[]
+  government            Boolean       @default(false)
+  existingProduction    Boolean       @default(false)
+  accessibilityRequired Boolean       @default(false)
+  sowReference          String?
+  clientSignoffOwner    String
+  regulations           String?
+  integrations          String?
+  phase                 Phase         @default(INTAKE)
+  status                ProjectStatus @default(ACTIVE)
+  stackKey              String?
+  stackRationale        String?
+  stackSelectedById     String?
+  stackSelectedAt       DateTime?
+  createdById           String
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+
+  members      ProjectMember[]
   sourceItems  SourceItem[]
   requirements Requirement[]
-  gaps         Gap[]
+  findings     LensFinding[]
   documents    Document[]
+  audits       DeepAudit[]
+  signoffs     ClientSignoff[]
   decisions    Decision[]
+  packs        GuardrailPack[]
+  checklists   ChecklistConfirmation[]
+  checks       ProjectCheck[]
   exceptions   GuardrailException[]
-  approvals    Approval[]
   runs         WorkflowRun[]
   tokenUsages  TokenUsage[]
 
+  @@unique([tenantId, code])
   @@index([tenantId])
 }
 
 model SourceItem {
-  id          String     @id @default(cuid())
-  tenantId    String
-  tenant      Tenant     @relation(fields: [tenantId], references: [id])
-  projectId   String
-  project     Project    @relation(fields: [projectId], references: [id])
-  kind        SourceKind
-  title       String
-  mimeType    String?
-  sizeBytes   Int?
-  /// Object key in MinIO/S3 (or local dev storage).
-  storageKey  String?
-  /// iDhi meeting id for IDHI_MEETING items.
-  externalRef String?
-  /// Extracted plain text used by the Documentation capability.
-  text        String?
-  metadata    Json       @default("{}")
-  createdById String
-  createdAt   DateTime   @default(now())
+  id                   String     @id @default(cuid())
+  tenantId             String
+  projectId            String
+  project              Project    @relation(fields: [projectId], references: [id])
+  kind                 SourceKind
+  title                String
+  mimeType             String?
+  sizeBytes            Int?
+  storageKey           String?
+  externalRef          String?
+  docType              DocTag?
+  version              String?
+  docDate              String?
+  provider             String?
+  personalData         Boolean    @default(false)
+  /// Original extracted text, stored encrypted at rest by the database volume; never sent to AI.
+  text                 String?
+  /// Masked text: the only text that reaches the AI worker (IN-G01, BRD-DG-02).
+  maskedText           String?
+  piiFindings          Json       @default("[]")
+  injectionFlags       Json       @default("[]")
+  maskingConfirmedById String?
+  maskingConfirmedAt   DateTime?
+  createdById          String
+  createdAt            DateTime   @default(now())
 
   chunks SourceChunk[]
 
   @@index([tenantId, projectId])
 }
 
-/// Retrieval chunks (pgvector). Embeddings populated later by the AI worker.
 model SourceChunk {
   id           String                       @id @default(cuid())
   tenantId     String
-  tenant       Tenant                       @relation(fields: [tenantId], references: [id])
   sourceItemId String
   sourceItem   SourceItem                   @relation(fields: [sourceItemId], references: [id])
   ordinal      Int
@@ -259,176 +312,218 @@ model SourceChunk {
 }
 
 model Requirement {
-  id          String          @id @default(cuid())
-  tenantId    String
-  tenant      Tenant          @relation(fields: [tenantId], references: [id])
-  projectId   String
-  project     Project         @relation(fields: [projectId], references: [id])
-  runId       String?
-  run         WorkflowRun?    @relation(fields: [runId], references: [id])
-  iteration   Int             @default(1)
-  code        String
-  title       String
-  description String
-  type        RequirementType
-  priority    Priority
-  status      ArtefactStatus  @default(DRAFT)
-  /// [{ sourceItemId, quote, location }] — every requirement must cite at least one source.
-  citations   Json
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @updatedAt
+  id                 String          @id @default(cuid())
+  tenantId           String
+  projectId          String
+  project            Project         @relation(fields: [projectId], references: [id])
+  documentId         String?
+  document           Document?       @relation(fields: [documentId], references: [id])
+  code               String
+  title              String
+  description        String
+  type               RequirementType
+  priority           Priority
+  citations          Json
+  acceptanceCriteria Json            @default("[]")
+  aiDrafted          Boolean         @default(true)
+  confirmed          Boolean         @default(false)
+  confirmedById      String?
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
 
-  @@index([tenantId, projectId, status])
+  @@index([tenantId, projectId])
 }
 
-model Gap {
-  id                      String      @id @default(cuid())
+model LensFinding {
+  id                      String        @id @default(cuid())
   tenantId                String
-  tenant                  Tenant      @relation(fields: [tenantId], references: [id])
   projectId               String
-  project                 Project     @relation(fields: [projectId], references: [id])
-  runId                   String?
-  run                     WorkflowRun? @relation(fields: [runId], references: [id])
-  iteration               Int         @default(1)
+  project                 Project       @relation(fields: [projectId], references: [id])
+  documentId              String?
+  document                Document?     @relation(fields: [documentId], references: [id])
+  code                    String
+  lens                    Lens
   category                String
   description             String
-  severity                GapSeverity
+  severity                Severity
+  question                String
+  proposedDefault         String
+  blocking                Boolean       @default(false)
   relatedRequirementCodes String[]
-  status                  GapStatus   @default(OPEN)
-  createdAt               DateTime    @default(now())
+  status                  FindingStatus @default(OPEN)
+  answer                  String?
+  resolvedById            String?
+  createdAt               DateTime      @default(now())
 
-  @@index([tenantId, projectId, status])
+  @@index([tenantId, projectId])
 }
 
 model Document {
-  id        String         @id @default(cuid())
-  tenantId  String
-  tenant    Tenant         @relation(fields: [tenantId], references: [id])
-  projectId String
-  project   Project        @relation(fields: [projectId], references: [id])
-  runId     String?
-  run       WorkflowRun?   @relation(fields: [runId], references: [id])
-  type      DocumentType
-  version   Int
-  status    ArtefactStatus @default(DRAFT)
-  /// { title, sections: [{ heading, statements: [{ text, citations[], requirementCodes[], aiSuggested }] }] }
-  content   Json
-  createdAt DateTime       @default(now())
-  updatedAt DateTime       @updatedAt
+  id           String       @id @default(cuid())
+  tenantId     String
+  projectId    String
+  project      Project      @relation(fields: [projectId], references: [id])
+  type         DocumentType
+  version      Int
+  status       DocStatus    @default(DRAFTING)
+  content      Json         @default("{}")
+  /// Model, prompt template version, source versions, user and time (BRD-DG-07).
+  generation   Json         @default("{}")
+  submittedAt  DateTime?
+  approvedById String?
+  approvedAt   DateTime?
+  reviewNote   String?
+  createdById  String
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  requirements Requirement[]
+  findings     LensFinding[]
+  audits       DeepAudit[]
+  signoffs     ClientSignoff[]
 
   @@unique([projectId, type, version])
   @@index([tenantId, projectId])
 }
 
+model DeepAudit {
+  id              String      @id @default(cuid())
+  tenantId        String
+  projectId       String
+  project         Project     @relation(fields: [projectId], references: [id])
+  documentId      String
+  document        Document    @relation(fields: [documentId], references: [id])
+  documentVersion Int
+  status          AuditStatus
+  criticalCount   Int
+  ruleFindings    Json
+  aiReport        Json
+  createdById     String
+  createdAt       DateTime    @default(now())
+
+  @@index([tenantId, projectId])
+}
+
+model ClientSignoff {
+  id            String    @id @default(cuid())
+  tenantId      String
+  projectId     String
+  project       Project   @relation(fields: [projectId], references: [id])
+  documentId    String
+  document      Document  @relation(fields: [documentId], references: [id])
+  signedByName  String
+  signedByEmail String
+  signedOn      String
+  note          String?
+  evidenceKey   String?
+  evidenceName  String?
+  recordedById  String
+  withdrawnAt   DateTime?
+  withdrawnNote String?
+  createdAt     DateTime  @default(now())
+
+  @@index([tenantId, projectId])
+}
+
 /// Architecture Decision Record.
 model Decision {
-  id           String         @id @default(cuid())
+  id           String   @id @default(cuid())
   tenantId     String
-  tenant       Tenant         @relation(fields: [tenantId], references: [id])
   projectId    String
-  project      Project        @relation(fields: [projectId], references: [id])
+  project      Project  @relation(fields: [projectId], references: [id])
   number       Int
   title        String
   context      String
   decision     String
   consequences String
-  status       DecisionStatus @default(PROPOSED)
   createdById  String
-  createdAt    DateTime       @default(now())
+  createdAt    DateTime @default(now())
 
   @@unique([projectId, number])
   @@index([tenantId])
 }
 
-/// Team guardrails. Edits create a new version; exactly one active version per tenant+name.
-model GuardrailRuleSet {
-  id          String          @id @default(cuid())
-  tenantId    String
-  tenant      Tenant          @relation(fields: [tenantId], references: [id])
-  name        String
-  version     Int
-  isActive    Boolean         @default(false)
-  changeNote  String?
-  createdById String
-  createdAt   DateTime        @default(now())
-  rules       GuardrailRule[]
+/// Guardrails and blueprints generated for a project's domain and stack (BRD-DOM-03, DOM-04).
+model GuardrailPack {
+  id             String      @id @default(cuid())
+  tenantId       String
+  projectId      String
+  project        Project     @relation(fields: [projectId], references: [id])
+  version        Int
+  status         PackStatus  @default(SUBMITTED)
+  domain         Domain
+  entityType     EntityType?
+  stackKey       String
+  flags          String[]
+  /// { rules: CatalogRule[], blueprints: Blueprint[], regulations: Regulation[], checklist: ChecklistItem[] }
+  content        Json
+  generatedById  String
+  approvedById   String?
+  approvedAt     DateTime?
+  decisionNote   String?
+  createdAt      DateTime    @default(now())
 
-  @@unique([tenantId, name, version])
-  @@index([tenantId, isActive])
+  @@unique([projectId, version])
+  @@index([tenantId, projectId])
 }
 
-model GuardrailRule {
-  id          String           @id @default(cuid())
+model ChecklistConfirmation {
+  id          String   @id @default(cuid())
   tenantId    String
-  tenant      Tenant           @relation(fields: [tenantId], references: [id])
-  ruleSetId   String
-  ruleSet     GuardrailRuleSet @relation(fields: [ruleSetId], references: [id])
-  /// Stable key referenced by exceptions and the checker, e.g. "no-hardcoded-secrets".
-  key         String
-  name        String
-  /// no-secrets | max-file-length | max-function-length | prohibited-pattern | require-tests-dir
-  type        String
-  level       RuleLevel
-  nonWaivable Boolean          @default(false)
-  appliesTo   String[]
-  params      Json             @default("{}")
-  description String?
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id])
+  userId      String
+  packVersion Int
+  items       Json
+  confirmedAt DateTime @default(now())
 
-  @@unique([ruleSetId, key])
-  @@index([tenantId])
+  @@unique([projectId, userId, packVersion])
+  @@index([tenantId, projectId])
+}
+
+model ProjectCheck {
+  id          String      @id @default(cuid())
+  tenantId    String
+  projectId   String
+  project     Project     @relation(fields: [projectId], references: [id])
+  userId      String
+  source      String
+  ref         String
+  packVersion Int
+  status      CheckStatus @default(RUNNING)
+  passed      Boolean?
+  blocking    Int         @default(0)
+  warnings    Int         @default(0)
+  filesScanned Int        @default(0)
+  report      Json        @default("{}")
+  error       String?
+  createdAt   DateTime    @default(now())
+
+  @@index([tenantId, projectId])
 }
 
 model GuardrailException {
-  id            String          @id @default(cuid())
-  tenantId      String
-  tenant        Tenant          @relation(fields: [tenantId], references: [id])
-  projectId     String
-  project       Project         @relation(fields: [projectId], references: [id])
-  ruleKey       String
-  reason        String
-  scope         ExceptionScope
-  changeRef     String?
-  paths         String[]
-  expiresAt     DateTime
-  status        ExceptionStatus @default(PENDING)
-  requestedById String
-  requestedBy   User            @relation("ExceptionRequestedBy", fields: [requestedById], references: [id])
-  decidedById   String?
-  decidedBy     User?           @relation("ExceptionDecidedBy", fields: [decidedById], references: [id])
-  decidedAt     DateTime?
-  decisionNote  String?
-  createdAt     DateTime        @default(now())
+  id                  String          @id @default(cuid())
+  tenantId            String
+  projectId           String
+  project             Project         @relation(fields: [projectId], references: [id])
+  ruleId              String
+  reason              String
+  compensatingControl String
+  expiresAt           DateTime
+  status              ExceptionStatus @default(REQUESTED)
+  requestedById       String
+  decidedById         String?
+  decidedAt           DateTime?
+  decisionNote        String?
+  createdAt           DateTime        @default(now())
 
   @@index([tenantId, projectId, status])
-}
-
-model Approval {
-  id            String          @id @default(cuid())
-  tenantId      String
-  tenant        Tenant          @relation(fields: [tenantId], references: [id])
-  projectId     String?
-  project       Project?        @relation(fields: [projectId], references: [id])
-  subjectType   ApprovalSubject
-  /// WorkflowRun id for REQUIREMENTS/DOCUMENTS, GuardrailException id for EXCEPTION.
-  subjectId     String
-  runId         String?
-  status        ApprovalStatus  @default(PENDING)
-  summary       String
-  requestedById String
-  requestedBy   User            @relation("ApprovalRequestedBy", fields: [requestedById], references: [id])
-  decidedById   String?
-  decidedBy     User?           @relation("ApprovalDecidedBy", fields: [decidedById], references: [id])
-  decidedAt     DateTime?
-  comments      String?
-  createdAt     DateTime        @default(now())
-
-  @@index([tenantId, status])
 }
 
 model WorkflowRun {
   id                 String    @id @default(cuid())
   tenantId           String
-  tenant             Tenant    @relation(fields: [tenantId], references: [id])
   projectId          String
   project            Project   @relation(fields: [projectId], references: [id])
   workflowType       String
@@ -442,19 +537,12 @@ model WorkflowRun {
   updatedAt          DateTime  @updatedAt
   finishedAt         DateTime?
 
-  requirements Requirement[]
-  gaps         Gap[]
-  documents    Document[]
-  tokenUsages  TokenUsage[]
-
   @@index([tenantId, projectId])
 }
 
-/// Capability registry: agents, tools and products plugged into the orchestration layer.
 model Capability {
   id          String           @id @default(cuid())
   tenantId    String
-  tenant      Tenant           @relation(fields: [tenantId], references: [id])
   name        String
   version     String
   kind        CapabilityKind
@@ -480,29 +568,29 @@ model AuditLog {
   action     String
   entityType String
   entityId   String?
+  projectId  String?
   data       Json     @default("{}")
   createdAt  DateTime @default(now())
 
   @@index([tenantId, createdAt])
+  @@index([tenantId, projectId])
   @@index([tenantId, entityType, entityId])
 }
 
 model TokenUsage {
-  id           String       @id @default(cuid())
+  id           String   @id @default(cuid())
   tenantId     String
-  tenant       Tenant       @relation(fields: [tenantId], references: [id])
   projectId    String?
-  project      Project?     @relation(fields: [projectId], references: [id])
+  project      Project? @relation(fields: [projectId], references: [id])
   runId        String?
-  run          WorkflowRun? @relation(fields: [runId], references: [id])
   provider     String
   modelId      String
   tier         String
   task         String
   inputTokens  Int
   outputTokens Int
-  costUsd      Decimal      @db.Decimal(12, 6)
-  createdAt    DateTime     @default(now())
+  costUsd      Decimal  @db.Decimal(12, 6)
+  createdAt    DateTime @default(now())
 
   @@index([tenantId, createdAt])
 }

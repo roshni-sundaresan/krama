@@ -28,7 +28,7 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 
-# krama CLI working dir in generated repos (not in this monorepo)
+# local Krama working files
 .krama/
 
 # os / editor

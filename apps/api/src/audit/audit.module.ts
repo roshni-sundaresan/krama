@@ -1,18 +1,14 @@
 import {
-  Controller,
-  Get,
   Global,
   Injectable,
   Module,
-  Query,
   type CallHandler,
   type ExecutionContext,
   type NestInterceptor,
 } from "@nestjs/common";
 import { APP_INTERCEPTOR } from "@nestjs/core";
-import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { tap, type Observable } from "rxjs";
-import { CurrentUser, Roles, type AuthUser, type AuthedRequest } from "../common/auth-user.js";
+import type { AuthedRequest } from "../common/auth-user.js";
 import { AuditService } from "./audit.service.js";
 
 /**
@@ -37,6 +33,7 @@ export class AuditInterceptor implements NestInterceptor {
             action: `http.${req.method.toLowerCase()}`,
             entityType: "route",
             entityId: route,
+            projectId: (req.params as Record<string, string>).projectId ?? null,
             data: { params: req.params as Record<string, string> },
           })
           .catch((err: unknown) => console.error("audit write failed", err));
@@ -45,27 +42,8 @@ export class AuditInterceptor implements NestInterceptor {
   }
 }
 
-@ApiTags("audit")
-@ApiBearerAuth()
-@Controller("audit")
-export class AuditController {
-  constructor(private readonly audit: AuditService) {}
-
-  @Get()
-  @Roles("Admin", "LeadArchitect", "Approver", "Challenger")
-  list(
-    @CurrentUser() user: AuthUser,
-    @Query("entityType") entityType?: string,
-    @Query("entityId") entityId?: string,
-    @Query("take") take?: string,
-  ) {
-    return this.audit.list(user.tenantId, { entityType, entityId, take: take ? Number(take) : undefined });
-  }
-}
-
 @Global()
 @Module({
-  controllers: [AuditController],
   providers: [AuditService, { provide: APP_INTERCEPTOR, useClass: AuditInterceptor }],
   exports: [AuditService],
 })

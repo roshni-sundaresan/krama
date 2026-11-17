@@ -13,10 +13,22 @@ const EnvSchema = z.object({
 
   API_JWT_SECRET: z.string().min(16, "API_JWT_SECRET must be at least 16 chars"),
   API_JWT_TTL: z.string().default("8h"),
-  CLI_JWT_TTL: z.string().default("7d"),
   /** Enables POST /auth/dev-login (mock login). Never enable in production. */
   AUTH_DEV_LOGIN: bool,
   DEFAULT_TENANT_SLUG: z.string().default("idealake"),
+  /** Extra email domains accepted by dev login only (seeded demo users use idealake.local). */
+  DEV_EXTRA_EMAIL_DOMAINS: z
+    .string()
+    .default("idealake.local")
+    .transform((v) => v.split(",").map((d) => d.trim().toLowerCase()).filter(Boolean)),
+  /** Upload limits (FSD VAL-UPL-02). */
+  MAX_UPLOAD_MB: z.coerce.number().default(25),
+  MAX_PROJECT_ZIP_MB: z.coerce.number().default(200),
+  /** Optional ClamAV daemon for upload scanning (BRD-DG-01). Without it, a built-in signature check runs. */
+  CLAMAV_HOST: z.string().optional(),
+  CLAMAV_PORT: z.coerce.number().default(3310),
+  /** Optional token for reading private GitHub repositories in the optional project check. */
+  GITHUB_TOKEN: z.string().optional(),
 
   /** Entra ID token exchange (POST /auth/entra/exchange). */
   ENTRA_TENANT_ID: z.string().optional(),

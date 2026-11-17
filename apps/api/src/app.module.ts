@@ -7,17 +7,12 @@ import { AuditModule } from "./audit/audit.module.js";
 import { AuthModule } from "./auth/auth.module.js";
 import { StorageModule } from "./storage/storage.service.js";
 import { TemporalModule } from "./temporal/temporal.service.js";
+import { AccessModule } from "./access/access.module.js";
 import { ProjectsModule } from "./projects/projects.module.js";
-import { SourceItemsModule } from "./source-items/source-items.module.js";
-import { RequirementsModule } from "./requirements/requirements.module.js";
-import { GapsModule } from "./gaps/gaps.module.js";
-import { DocumentsModule } from "./documents/documents.module.js";
-import { ApprovalsModule } from "./approvals/approvals.module.js";
-import { GuardrailsModule } from "./guardrails/guardrails.module.js";
-import { ExceptionsModule } from "./exceptions/exceptions.module.js";
-import { RunsModule } from "./runs/runs.module.js";
-import { CapabilitiesModule } from "./capabilities/capabilities.module.js";
-import { ContextPackModule } from "./context-pack/context-pack.module.js";
+import { SourcesModule } from "./sources/sources.module.js";
+import { BrdModule } from "./brd/brd.module.js";
+import { PacksModule } from "./packs/packs.module.js";
+import { DevModule } from "./dev/dev.module.js";
 
 @Global()
 @Module({ providers: [{ provide: APP_CONFIG, useFactory: () => loadConfig() }], exports: [APP_CONFIG] })
@@ -42,25 +37,7 @@ class HealthController {
 }
 
 @Module({
-  imports: [
-    ConfigModule,
-    PrismaModule,
-    AuditModule,
-    AuthModule,
-    StorageModule,
-    TemporalModule,
-    ProjectsModule,
-    SourceItemsModule,
-    RequirementsModule,
-    GapsModule,
-    DocumentsModule,
-    ApprovalsModule,
-    GuardrailsModule,
-    ExceptionsModule,
-    RunsModule,
-    CapabilitiesModule,
-    ContextPackModule,
-  ],
+  imports: [ConfigModule, PrismaModule, AuditModule, AuthModule, StorageModule, TemporalModule, AccessModule, ProjectsModule, SourcesModule, BrdModule, PacksModule, DevModule],
   controllers: [HealthController],
 })
 export class AppModule {}

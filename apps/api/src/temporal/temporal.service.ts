@@ -1,10 +1,11 @@
 import { Global, Inject, Injectable, Module, ServiceUnavailableException, type OnModuleDestroy } from "@nestjs/common";
 import {
   createTemporalClient,
-  signalGate,
-  startDocumentationWorkflow,
-  type DocumentationWorkflowInput,
-  type GateSignal,
+  runDeepAuditWorkflow,
+  startBrdDraftWorkflow,
+  type BrdDraftWorkflowInput,
+  type DeepAuditOutput,
+  type DeepAuditWorkflowInput,
   type TemporalClient as Client,
 } from "@krama/workflows";
 import { APP_CONFIG, type AppConfig } from "../config.js";
@@ -17,24 +18,23 @@ export class TemporalService implements OnModuleDestroy {
   constructor(@Inject(APP_CONFIG) private readonly config: AppConfig) {}
 
   private async getClient(): Promise<Client> {
-    this.client ??= createTemporalClient({
-      address: this.config.TEMPORAL_ADDRESS,
-      namespace: this.config.TEMPORAL_NAMESPACE,
-    }).catch((err: unknown) => {
-      this.client = undefined;
-      throw new ServiceUnavailableException(
-        `Temporal unavailable at ${this.config.TEMPORAL_ADDRESS}: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    });
+    this.client ??= createTemporalClient({ address: this.config.TEMPORAL_ADDRESS, namespace: this.config.TEMPORAL_NAMESPACE }).catch(
+      (err: unknown) => {
+        this.client = undefined;
+        throw new ServiceUnavailableException(
+          `Workflow engine unavailable at ${this.config.TEMPORAL_ADDRESS}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      },
+    );
     return this.client;
   }
 
-  async startDocumentation(input: DocumentationWorkflowInput): Promise<string> {
-    return startDocumentationWorkflow(await this.getClient(), input);
+  async startBrdDraft(input: BrdDraftWorkflowInput): Promise<string> {
+    return startBrdDraftWorkflow(await this.getClient(), input);
   }
 
-  async signal(workflowId: string, signal: GateSignal): Promise<void> {
-    await signalGate(await this.getClient(), workflowId, signal);
+  async runDeepAudit(input: DeepAuditWorkflowInput): Promise<DeepAuditOutput> {
+    return runDeepAuditWorkflow(await this.getClient(), input);
   }
 
   async onModuleDestroy(): Promise<void> {

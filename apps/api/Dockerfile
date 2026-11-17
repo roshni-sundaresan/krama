@@ -7,10 +7,12 @@ WORKDIR /repo
 FROM base AS build
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json tsconfig.base.json ./
 COPY packages/shared/package.json packages/shared/
+COPY packages/guardrails/package.json packages/guardrails/
 COPY packages/workflows/package.json packages/workflows/
 COPY apps/api/package.json apps/api/
 RUN pnpm install --frozen-lockfile --filter "@krama/api..."
 COPY packages/shared packages/shared
+COPY packages/guardrails packages/guardrails
 COPY packages/workflows packages/workflows
 COPY apps/api apps/api
 RUN pnpm --filter "@krama/api" exec prisma generate \

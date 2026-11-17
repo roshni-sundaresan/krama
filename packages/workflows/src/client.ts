@@ -1,13 +1,7 @@
 import { Client, Connection } from "@temporalio/client";
+import { ORCHESTRATION_TASK_QUEUE, type BrdDraftWorkflowInput, type DeepAuditOutput, type DeepAuditWorkflowInput } from "./types.js";
 
 export type { Client as TemporalClient } from "@temporalio/client";
-import { approveDocuments, approveRequirements, reject, returnWithComments, statusQuery } from "./signals.js";
-import type { ApprovePayload, RejectPayload, ReturnPayload } from "./signals.js";
-import {
-  ORCHESTRATION_TASK_QUEUE,
-  type DocumentationWorkflowInput,
-  type WorkflowStatus,
-} from "./types.js";
 
 export interface TemporalSettings {
   address: string;
@@ -19,40 +13,22 @@ export async function createTemporalClient(s: TemporalSettings): Promise<Client>
   return new Client({ connection, namespace: s.namespace });
 }
 
-export function documentationWorkflowId(runId: string): string {
-  return `documentation-${runId}`;
-}
-
-export async function startDocumentationWorkflow(client: Client, input: DocumentationWorkflowInput): Promise<string> {
-  const handle = await client.workflow.start("documentationWorkflow", {
+export async function startBrdDraftWorkflow(client: Client, input: BrdDraftWorkflowInput): Promise<string> {
+  const handle = await client.workflow.start("brdDraftWorkflow", {
     taskQueue: ORCHESTRATION_TASK_QUEUE,
-    workflowId: documentationWorkflowId(input.runId),
+    workflowId: `brd-draft-${input.runId}`,
     args: [input],
-    // Phase-gated workflows may live for weeks; no execution timeout on purpose.
+    workflowExecutionTimeout: "1 hour",
   });
   return handle.workflowId;
 }
 
-export type GateSignal =
-  | { name: "approveRequirements"; payload: ApprovePayload }
-  | { name: "approveDocuments"; payload: ApprovePayload }
-  | { name: "returnWithComments"; payload: ReturnPayload }
-  | { name: "reject"; payload: RejectPayload };
-
-export async function signalGate(client: Client, workflowId: string, signal: GateSignal): Promise<void> {
-  const handle = client.workflow.getHandle(workflowId);
-  switch (signal.name) {
-    case "approveRequirements":
-      return handle.signal(approveRequirements, signal.payload);
-    case "approveDocuments":
-      return handle.signal(approveDocuments, signal.payload);
-    case "returnWithComments":
-      return handle.signal(returnWithComments, signal.payload);
-    case "reject":
-      return handle.signal(reject, signal.payload);
-  }
-}
-
-export async function queryStatus(client: Client, workflowId: string): Promise<WorkflowStatus> {
-  return client.workflow.getHandle(workflowId).query(statusQuery);
+/** Runs the Deep Audit and waits for its result. */
+export async function runDeepAuditWorkflow(client: Client, input: DeepAuditWorkflowInput): Promise<DeepAuditOutput> {
+  return client.workflow.execute("deepAuditWorkflow", {
+    taskQueue: ORCHESTRATION_TASK_QUEUE,
+    workflowId: `deep-audit-${input.runId}`,
+    args: [input],
+    workflowExecutionTimeout: "15 minutes",
+  });
 }

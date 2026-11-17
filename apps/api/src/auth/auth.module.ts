@@ -7,7 +7,7 @@ import { APP_CONFIG, type AppConfig } from "../config.js";
 import { CurrentUser, Public, type AuthUser } from "../common/auth-user.js";
 import { ZodPipe } from "../common/zod.pipe.js";
 import { AuthService } from "./auth.service.js";
-import { JwtAuthGuard, RolesGuard } from "./guards.js";
+import { JwtAuthGuard, PermissionGuard } from "./guards.js";
 
 const DevLoginSchema = z.object({ email: z.email() });
 const EntraExchangeSchema = z.object({ idToken: z.string().min(20) });
@@ -44,14 +44,6 @@ export class AuthController {
   me(@CurrentUser() user: AuthUser) {
     return user;
   }
-
-  /** Longer-lived token for `krama login --token`. */
-  @ApiBearerAuth()
-  @Post("cli-token")
-  @HttpCode(200)
-  cliToken(@CurrentUser() user: AuthUser) {
-    return this.auth.cliToken(user.id, user.tenantId);
-  }
 }
 
 @Module({
@@ -70,7 +62,7 @@ export class AuthController {
   providers: [
     AuthService,
     { provide: APP_GUARD, useClass: JwtAuthGuard },
-    { provide: APP_GUARD, useClass: RolesGuard },
+    { provide: APP_GUARD, useClass: PermissionGuard },
   ],
   exports: [AuthService],
 })

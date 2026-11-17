@@ -9,7 +9,7 @@
 #   vars.KRAMA_SERVER          e.g. https://krama.idealake.internal
 #   vars.KRAMA_PROJECT_ID      Krama project id
 #   secrets.KRAMA_CI_TOKEN     service token with read access to the project's guardrails
-#                              (TODO: dedicated CI service principal; Phase 1 can use a CLI token)
+#                              (TODO: dedicated CI service principal)
 #   vars.KRAMA_GUARDRAILS_VERSION  checker version published to the internal npm registry
 name: krama-guardrails
 

@@ -9,6 +9,7 @@ export interface AuditEntry {
   action: string;
   entityType: string;
   entityId?: string | null;
+  projectId?: string | null;
   data?: Prisma.InputJsonValue;
 }
 
@@ -28,14 +29,21 @@ export class AuditService {
         action: entry.action,
         entityType: entry.entityType,
         entityId: entry.entityId ?? null,
+        projectId: entry.projectId ?? null,
         data: entry.data ?? {},
       },
     });
   }
 
-  list(tenantId: string, opts: { entityType?: string; entityId?: string; take?: number }) {
+  list(tenantId: string, opts: { entityType?: string; entityId?: string; projectId?: string; actionPrefix?: string; take?: number }) {
     return this.prisma.auditLog.findMany({
-      where: { tenantId, entityType: opts.entityType, entityId: opts.entityId },
+      where: {
+        tenantId,
+        entityType: opts.entityType,
+        entityId: opts.entityId,
+        projectId: opts.projectId,
+        action: opts.actionPrefix ? { startsWith: opts.actionPrefix } : undefined,
+      },
       orderBy: { createdAt: "desc" },
       take: Math.min(opts.take ?? 100, 500),
     });

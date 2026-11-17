@@ -1,6 +1,6 @@
 import { createParamDecorator, SetMetadata, type ExecutionContext } from "@nestjs/common";
 import type { Request } from "express";
-import type { Role } from "@krama/shared";
+import type { Permission, Role } from "@krama/shared";
 
 /** The authenticated principal attached to every request by JwtAuthGuard. */
 export interface AuthUser {
@@ -23,6 +23,6 @@ export const IS_PUBLIC = "krama:isPublic";
 /** Skip JWT auth (dev login, health, internal callbacks guarded separately). */
 export const Public = () => SetMetadata(IS_PUBLIC, true);
 
-export const ROLES_KEY = "krama:roles";
-/** Restrict a route to users holding any of these roles (Admin always passes). */
-export const Roles = (...roles: Role[]) => SetMetadata(ROLES_KEY, roles);
+export const PERMISSION_KEY = "krama:permission";
+/** Restrict a route to roles holding this permission (shared PERMISSIONS map, BRD-RBAC-06). */
+export const RequirePermission = (permission: Permission) => SetMetadata(PERMISSION_KEY, permission);

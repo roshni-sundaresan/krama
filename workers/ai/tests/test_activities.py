@@ -22,34 +22,37 @@ def test_extract_activity_returns_cited_requirements_and_usage(activities, usage
     assert len(usage_log) == 1
 
 
-def test_gap_activity_uses_haiku_tier(activities):
+def test_draft_activity_marks_uncited_statements_ai_drafted(activities):
     reqs = env.run(activities.extract_requirements, {"sources": SOURCES})["requirements"]
-    out = env.run(activities.gap_report, {"sources": SOURCES, "requirements": reqs})
-    assert out["usage"][0]["tier"] == "haiku"
-    assert out["gaps"]
-
-
-def test_draft_activity_enforces_citation_invariant(activities):
-    reqs = env.run(activities.extract_requirements, {"sources": SOURCES})["requirements"]
-    # a citation pointing at an unknown source is stripped and the statement becomes AI-suggested
     reqs[0]["citations"] = [{"sourceItemId": "unknown", "quote": "x"}]
     out = env.run(
-        activities.draft_document,
-        {"documentType": "FSD", "projectName": "Demo", "requirements": reqs, "sources": SOURCES},
+        activities.draft_brd,
+        {"project": {"name": "Demo"}, "version": 1, "requirements": reqs, "findings": [], "sources": SOURCES},
     )
     statements = [s for sec in out["document"]["sections"] for s in sec["statements"]]
-    first = next(s for s in statements if "REQ-001" in s["requirementCodes"])
+    first = next(s for s in statements if reqs[0]["code"] in s["requirementCodes"])
     assert first["citations"] == [] and first["aiSuggested"] is True
 
 
-def test_draft_activity_rejects_unknown_type(activities):
-    with pytest.raises(ValueError):
-        env.run(activities.draft_document, {"documentType": "PRD", "requirements": []})
+def test_output_scrub_removes_personal_data():
+    from krama_ai.activities import scrub
+
+    assert "[REMOVED]" in scrub("Call 98765 43210 or a.b@c.com, PAN ABCDE1234F")
+    assert "98765" not in scrub("Call 98765 43210")
+
+
+def test_deep_audit_activity_uses_opus_and_validates(activities):
+    out = env.run(
+        activities.deep_audit,
+        {"project": {"code": "X"}, "requirements": [], "findings": [], "document": {"sections": []}},
+    )
+    assert out["usage"][0]["tier"] == "opus"
+    assert out["report"]["readiness_assessment"]["status"] == "READY_FOR_FSD"
 
 
 def test_gateway_tier_override_and_cost(gateway):
-    assert gateway.resolve_tier("gap_report") == "haiku"
-    assert gateway.resolve_tier("gap_report", "opus") == "opus"
+    assert gateway.resolve_tier("deep_audit") == "opus"
+    assert gateway.resolve_tier("lens_findings", "haiku") == "haiku"
     assert gateway.resolve_tier("unknown_task") == "sonnet"
     assert gateway.cost("sonnet", 1_000_000, 0) == DEFAULT_PRICING["sonnet"][0]
     with pytest.raises(ValueError):
@@ -72,7 +75,7 @@ def test_bedrock_provider_with_fake_client(usage_log):
     settings = Settings()
     provider = BedrockProvider(settings.aws_region, settings.model_ids, client=fake)
     gw = ModelGateway(provider, DEFAULT_PRICING, hooks=[usage_log.append])
-    data, usage = gw.complete("gap_report", "sys", "prompt", {})
+    data, usage = gw.complete("extract_requirements", "sys", "prompt", {}, tier="haiku")
     assert data == {"gaps": []}
     assert fake.calls[0]["modelId"] == settings.model_ids["haiku"]
     assert json.loads(fake.calls[0]["body"])["anthropic_version"] == "bedrock-2023-05-31"

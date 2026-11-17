@@ -19,8 +19,9 @@ TIERS: tuple[Tier, ...] = ("haiku", "sonnet", "opus")
 # Default tier per task. Override per call with `tier=`.
 TASK_TIERS: dict[str, Tier] = {
     "extract_requirements": "sonnet",
-    "gap_report": "haiku",
-    "draft_document": "sonnet",
+    "lens_findings": "sonnet",
+    "draft_brd": "sonnet",
+    "deep_audit": "opus",
 }
 
 log = logging.getLogger("krama_ai.usage")

@@ -10,7 +10,7 @@
   },
   "scripts": {
     "build": "pnpm -r --workspace-concurrency=1 build",
-    "build:libs": "pnpm --filter @krama/shared --filter @krama/guardrails --filter @krama/workflows --filter @krama/cli build",
+    "build:libs": "pnpm --filter @krama/shared --filter @krama/guardrails --filter @krama/workflows build",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
     "lint": "eslint .",

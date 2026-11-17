@@ -1,68 +1,74 @@
-import { Body, Controller, Get, Global, Module, Param, Patch, Post } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Global, HttpCode, Module, Param, Patch, Post } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { z } from "zod";
-import { CODING_TOOLS, CreateProjectSchema, DepthModeSchema, type CreateProjectInput } from "@krama/shared";
-import { CurrentUser, Roles, type AuthUser } from "../common/auth-user.js";
+import { CreateProjectSchema, type CreateProjectInput } from "@krama/shared";
+import { CurrentUser, RequirePermission, type AuthUser } from "../common/auth-user.js";
 import { ZodPipe } from "../common/zod.pipe.js";
+import { PrismaService } from "../prisma/prisma.service.js";
 import { ProjectsService } from "./projects.service.js";
 
-const UpdateSettingsSchema = z.object({
-  depthMode: DepthModeSchema.optional(),
-  approvedTools: z.array(z.enum(CODING_TOOLS)).optional(),
-});
-const DecisionSchema = z.object({
-  title: z.string().min(3),
-  context: z.string().min(1),
-  decision: z.string().min(1),
-  consequences: z.string().default(""),
-});
+const UpdateIntakeSchema = CreateProjectSchema.partial();
+const MemberSchema = z.object({ userId: z.string().min(1) });
 
 @ApiTags("projects")
 @ApiBearerAuth()
-@Controller("projects")
+@Controller()
 export class ProjectsController {
-  constructor(private readonly projects: ProjectsService) {}
+  constructor(
+    private readonly projects: ProjectsService,
+    private readonly prisma: PrismaService,
+  ) {}
 
-  @Get()
+  @Get("projects")
   list(@CurrentUser() user: AuthUser) {
     return this.projects.list(user);
   }
 
-  @Post()
-  @Roles("BA", "LeadArchitect")
+  @Get("inbox")
+  inbox(@CurrentUser() user: AuthUser) {
+    return this.projects.inbox(user);
+  }
+
+  @Post("projects")
+  @RequirePermission("project.create")
   create(@CurrentUser() user: AuthUser, @Body(new ZodPipe(CreateProjectSchema)) body: CreateProjectInput) {
     return this.projects.create(user, body);
   }
 
-  @Get(":id")
-  get(@CurrentUser() user: AuthUser, @Param("id") id: string) {
-    return this.projects.get(user, id);
+  @Get("projects/:projectId")
+  get(@CurrentUser() user: AuthUser, @Param("projectId") projectId: string) {
+    return this.projects.get(user, projectId);
   }
 
-  /** Depth mode and approved coding tools are Lead Architect decisions. */
-  @Patch(":id/settings")
-  @Roles("LeadArchitect")
-  update(
-    @CurrentUser() user: AuthUser,
-    @Param("id") id: string,
-    @Body(new ZodPipe(UpdateSettingsSchema)) body: z.infer<typeof UpdateSettingsSchema>,
-  ) {
-    return this.projects.updateSettings(user, id, body);
+  @Patch("projects/:projectId/intake")
+  @RequirePermission("intake.edit")
+  updateIntake(@CurrentUser() user: AuthUser, @Param("projectId") projectId: string, @Body(new ZodPipe(UpdateIntakeSchema)) body: Partial<CreateProjectInput>) {
+    return this.projects.updateIntake(user, projectId, body);
   }
 
-  @Get(":id/decisions")
-  decisions(@CurrentUser() user: AuthUser, @Param("id") id: string) {
-    return this.projects.listDecisions(user, id);
+  @Get("projects/:projectId/activity")
+  activity(@CurrentUser() user: AuthUser, @Param("projectId") projectId: string) {
+    return this.projects.activity(user, projectId);
   }
 
-  @Post(":id/decisions")
-  @Roles("LeadArchitect")
-  addDecision(
-    @CurrentUser() user: AuthUser,
-    @Param("id") id: string,
-    @Body(new ZodPipe(DecisionSchema)) body: z.infer<typeof DecisionSchema>,
-  ) {
-    return this.projects.addDecision(user, id, body);
+  /** People a Tech Architect can assign (active users with a delivery role). */
+  @Get("people")
+  @RequirePermission("project.assign")
+  people(@CurrentUser() user: AuthUser) {
+    return this.prisma.user.findMany({ where: { tenantId: user.tenantId, active: true }, select: { id: true, name: true, email: true, roles: true }, orderBy: { name: "asc" } });
+  }
+
+  @Post("projects/:projectId/members")
+  @RequirePermission("project.assign")
+  addMember(@CurrentUser() user: AuthUser, @Param("projectId") projectId: string, @Body(new ZodPipe(MemberSchema)) body: z.infer<typeof MemberSchema>) {
+    return this.projects.addMember(user, projectId, body.userId);
+  }
+
+  @Delete("projects/:projectId/members/:userId")
+  @HttpCode(204)
+  @RequirePermission("project.assign")
+  removeMember(@CurrentUser() user: AuthUser, @Param("projectId") projectId: string, @Param("userId") userId: string) {
+    return this.projects.removeMember(user, projectId, userId);
   }
 }
 

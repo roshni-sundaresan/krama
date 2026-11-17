@@ -1,24 +1,25 @@
-import {
-  ForbiddenException,
-  Inject,
-  Injectable,
-  UnauthorizedException,
-  type CanActivate,
-  type ExecutionContext,
-} from "@nestjs/common";
+import { HttpStatus, Inject, Injectable, UnauthorizedException, type CanActivate, type ExecutionContext } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import { JwtService } from "@nestjs/jwt";
 import { timingSafeEqual } from "node:crypto";
-import { hasAnyRole, isReadOnly, RoleSchema, type KramaJwtClaims, type Role } from "@krama/shared";
+import { can, RoleSchema, type KramaJwtClaims, type Permission, type Role } from "@krama/shared";
 import { APP_CONFIG, type AppConfig } from "../config.js";
-import { IS_PUBLIC, ROLES_KEY, type AuthedRequest } from "../common/auth-user.js";
+import { IS_PUBLIC, PERMISSION_KEY, type AuthedRequest } from "../common/auth-user.js";
+import { fail } from "../common/errors.js";
+import { PrismaService } from "../prisma/prisma.service.js";
+import { AuditService } from "../audit/audit.service.js";
 
-/** Global guard: requires a valid Krama API JWT unless the route is @Public(). */
+/**
+ * Global guard: requires a valid Krama API JWT unless the route is @Public().
+ * Roles are re-read from the database on every request, so a revoked role takes effect at the
+ * user's next request (BRD-RBAC-02) and a disabled user is locked out immediately.
+ */
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
   constructor(
     private readonly reflector: Reflector,
     private readonly jwt: JwtService,
+    private readonly prisma: PrismaService,
   ) {}
 
   async canActivate(ctx: ExecutionContext): Promise<boolean> {
@@ -27,44 +28,49 @@ export class JwtAuthGuard implements CanActivate {
     const header = req.headers.authorization ?? "";
     const token = header.startsWith("Bearer ") ? header.slice(7) : undefined;
     if (!token) throw new UnauthorizedException("Missing bearer token");
+    let claims: KramaJwtClaims;
     try {
-      const claims = await this.jwt.verifyAsync<KramaJwtClaims>(token);
-      req.user = {
-        id: claims.sub,
-        tenantId: claims.tenantId,
-        email: claims.email,
-        name: claims.name,
-        roles: (claims.roles ?? []).filter((r): r is Role => RoleSchema.safeParse(r).success),
-      };
-      return true;
+      claims = await this.jwt.verifyAsync<KramaJwtClaims>(token);
     } catch {
       throw new UnauthorizedException("Invalid or expired token");
     }
+    const user = await this.prisma.user.findFirst({ where: { id: claims.sub, tenantId: claims.tenantId } });
+    if (!user || !user.active) throw new UnauthorizedException("User is disabled");
+    req.user = {
+      id: user.id,
+      tenantId: user.tenantId,
+      email: user.email,
+      name: user.name,
+      roles: (user.roles as string[]).filter((r): r is Role => RoleSchema.safeParse(r).success),
+    };
+    return true;
   }
 }
 
-/**
- * Global guard: enforces @Roles(...) and makes Challenger-only users read-only.
- * TODO: per-project membership checks (Phase 2).
- */
+/** Global guard: enforces @RequirePermission(...) on the server and logs refusals. */
 @Injectable()
-export class RolesGuard implements CanActivate {
-  constructor(private readonly reflector: Reflector) {}
+export class PermissionGuard implements CanActivate {
+  constructor(
+    private readonly reflector: Reflector,
+    private readonly audit: AuditService,
+  ) {}
 
-  canActivate(ctx: ExecutionContext): boolean {
+  async canActivate(ctx: ExecutionContext): Promise<boolean> {
     if (this.reflector.getAllAndOverride<boolean>(IS_PUBLIC, [ctx.getHandler(), ctx.getClass()])) return true;
     const req = ctx.switchToHttp().getRequest<AuthedRequest>();
     const user = req.user;
     if (!user) throw new UnauthorizedException();
-    if (isReadOnly(user.roles) && !["GET", "HEAD", "OPTIONS"].includes(req.method)) {
-      throw new ForbiddenException("Challenger role is read-only");
-    }
-    const required = this.reflector.getAllAndOverride<Role[] | undefined>(ROLES_KEY, [
-      ctx.getHandler(),
-      ctx.getClass(),
-    ]);
-    if (required && required.length > 0 && !hasAnyRole(user.roles, required)) {
-      throw new ForbiddenException(`Requires one of: ${required.join(", ")}`);
+    const permission = this.reflector.getAllAndOverride<Permission | undefined>(PERMISSION_KEY, [ctx.getHandler(), ctx.getClass()]);
+    if (permission && !can(user.roles, permission)) {
+      await this.audit.record({
+        tenantId: user.tenantId,
+        actorId: user.id,
+        action: "access.denied",
+        entityType: "route",
+        entityId: `${req.method} ${req.route?.path ?? req.path}`,
+        data: { permission },
+      });
+      fail("MSG-AUTH-03", HttpStatus.FORBIDDEN);
     }
     return true;
   }

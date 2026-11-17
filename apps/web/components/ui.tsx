@@ -1,96 +1,81 @@
 import Link from "next/link";
-import type { ComponentProps, ReactNode } from "react";
+import type { ReactNode } from "react";
 
-export function Card({ title, actions, children, className = "" }: { title?: ReactNode; actions?: ReactNode; children: ReactNode; className?: string }) {
+export type SP = Promise<Record<string, string | string[] | undefined>>;
+export const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
+
+/** Success or error notice carried back from a server action in the query string. */
+export async function Flash({ searchParams }: { searchParams: SP }) {
+  const sp = await searchParams;
+  const ok = one(sp.ok), error = one(sp.error);
+  if (error) return <div role="alert" className="notice err">{error}</div>;
+  if (ok) return <div role="status" className="notice ok">{ok}</div>;
+  return null;
+}
+
+export function PageHead({ eyebrow, title, children }: { eyebrow?: ReactNode; title: ReactNode; children?: ReactNode }) {
   return (
-    <section className={`rounded-lg border border-slate-200 bg-white shadow-sm ${className}`}>
-      {(title || actions) && (
-        <header className="flex items-center justify-between gap-4 border-b border-slate-100 px-4 py-3">
-          <h2 className="text-sm font-semibold text-slate-800">{title}</h2>
-          <div className="flex items-center gap-2">{actions}</div>
-        </header>
-      )}
-      <div className="p-4">{children}</div>
-    </section>
+    <header className="between">
+      <div className="col" style={{ gap: 4 }}>
+        {eyebrow && <span className="small muted">{eyebrow}</span>}
+        <h1>{title}</h1>
+      </div>
+      {children && <div className="row">{children}</div>}
+    </header>
   );
 }
 
-const TONES = {
-  slate: "bg-slate-100 text-slate-700",
-  blue: "bg-brand-100 text-brand-700",
-  green: "bg-emerald-100 text-emerald-800",
-  amber: "bg-amber-100 text-amber-800",
-  red: "bg-rose-100 text-rose-800",
-  violet: "bg-violet-100 text-violet-800",
-} as const;
+export type Tone = "ok" | "warn" | "block" | "info" | "grey";
+export const Chip = ({ tone = "grey", children }: { tone?: Tone; children: ReactNode }) => <span className={`chip ${tone}`}>{children}</span>;
 
-export function Badge({ children, tone = "slate" }: { children: ReactNode; tone?: keyof typeof TONES }) {
-  return <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium ${TONES[tone]}`}>{children}</span>;
+export function levelTone(level: string): Tone {
+  return level === "NON_WAIVABLE" || level === "BLOCK" || level === "HIGH" || level === "CRITICAL_BLOCKER" ? "block" : level === "WARN" || level === "MEDIUM" ? "warn" : "grey";
 }
+export const LEVEL_LABEL: Record<string, string> = { NON_WAIVABLE: "Non-waivable", BLOCK: "Block", WARN: "Warn" };
 
-export function StatusBadge({ status }: { status: string }) {
-  const tone: keyof typeof TONES =
-    status === "APPROVED" || status === "COMPLETED" || status === "pass"
-      ? "green"
-      : status === "PENDING" || status === "IN_REVIEW" || status === "WAITING"
-        ? "amber"
-        : status === "REJECTED" || status === "FAILED"
-          ? "red"
-          : status === "RETURNED"
-            ? "violet"
-            : status === "RUNNING"
-              ? "blue"
-              : "slate";
-  return <Badge tone={tone}>{status.replaceAll("_", " ").toLowerCase()}</Badge>;
-}
+export interface PipeStep { phase: string; label: string; state: "done" | "active" | "waiting" | "locked" | "later"; status: string }
 
-export function Button({ variant = "primary", className = "", ...props }: ComponentProps<"button"> & { variant?: "primary" | "secondary" | "danger" }) {
-  const styles = {
-    primary: "bg-brand-600 text-white hover:bg-brand-700",
-    secondary: "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50",
-    danger: "bg-rose-600 text-white hover:bg-rose-700",
-  }[variant];
+export function Pipeline({ steps, projectId }: { steps: PipeStep[]; projectId: string }) {
+  const href: Record<string, string> = { INTAKE: "intake", BRD: "brd", CLIENT_SIGNOFF: "audit", STACK: "stack", DEVELOPMENT: "development" };
   return (
-    <button
-      {...props}
-      className={`inline-flex items-center rounded-md px-3 py-1.5 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50 ${styles} ${className}`}
-    />
-  );
-}
-
-export function LinkButton({ href, children }: { href: string; children: ReactNode }) {
-  return (
-    <Link href={href} className="inline-flex items-center rounded-md bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700">
-      {children}
-    </Link>
-  );
-}
-
-export function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
-  return (
-    <label className="block space-y-1">
-      <span className="text-sm font-medium text-slate-700">{label}</span>
-      {children}
-      {hint && <span className="block text-xs text-slate-500">{hint}</span>}
-    </label>
-  );
-}
-
-export const inputClass = "w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-brand-600 focus:outline-none";
-
-export function Empty({ children }: { children: ReactNode }) {
-  return <p className="text-sm text-slate-500">{children}</p>;
-}
-
-export function Notice({ error, ok }: { error?: string; ok?: string }) {
-  if (!error && !ok) return null;
-  return (
-    <div className={`rounded-md px-4 py-2 text-sm ${error ? "bg-rose-50 text-rose-800" : "bg-emerald-50 text-emerald-800"}`}>
-      {error ?? ok}
+    <div className="pipe">
+      {steps.map((s) => {
+        const cls = `step ${s.state === "locked" ? "" : s.state}`;
+        const inner = (
+          <>
+            <span className="s">{s.status}</span>
+            <span className="n">{s.label}</span>
+          </>
+        );
+        return href[s.phase] && s.state !== "later" ? (
+          <Link key={s.phase} className={cls} href={`/projects/${projectId}/${href[s.phase]}`}>{inner}</Link>
+        ) : (
+          <div key={s.phase} className={cls}>{inner}</div>
+        );
+      })}
     </div>
   );
 }
 
-export function Code({ children }: { children: ReactNode }) {
-  return <code className="rounded bg-slate-100 px-1 py-0.5 font-mono text-xs">{children}</code>;
+export function Empty({ children }: { children: ReactNode }) {
+  return <p className="muted small" style={{ margin: 0 }}>{children}</p>;
+}
+
+/** A link through the web app's download proxy (the API token never reaches the browser). */
+export function DownloadLink({ path, children, className = "btn sm" }: { path: string; children: ReactNode; className?: string }) {
+  return (
+    <a className={className} href={`/api/download?path=${encodeURIComponent(path)}`}>
+      {children}
+    </a>
+  );
+}
+
+export function NotFound({ what = "project" }: { what?: string }) {
+  return (
+    <div className="card col">
+      <h2>Not found</h2>
+      <p className="muted small" style={{ margin: 0 }}>This {what} does not exist, or you are not assigned to it. Ask a Tech Architect if you need access.</p>
+      <Link className="btn sm" href="/projects" style={{ alignSelf: "flex-start" }}>Back to projects</Link>
+    </div>
+  );
 }
