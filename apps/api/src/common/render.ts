@@ -120,3 +120,77 @@ export function footerText(opts: { project: string; version: string; user: strin
   const when = new Date().toISOString().slice(0, 16).replace("T", " ");
   return `Krama · ${opts.project} · ${opts.version} · Confidential · Downloaded by ${opts.user} on ${when} UTC`;
 }
+
+// ---------- PDF ----------
+// Built-in Helvetica (WinAnsi); characters outside it are replaced with plain equivalents.
+const PDF_SUBS: [RegExp, string][] = [[/≥/g, ">="], [/≤/g, "<="], [/[→⇒]/g, "->"], [/₹/g, "Rs "], [/[“”]/g, '"'], [/[‘’]/g, "'"], [/…/g, "..."], [/[^\x09\x0A\x0D\x20-\x7E -ÿ–—•·€]/g, "?"]];
+const pdfText = (s: string) => PDF_SUBS.reduce((t, [re, r]) => t.replace(re, r), s);
+
+export async function toPdf(doc: RenderDoc): Promise<Buffer> {
+  const { default: PDFDocument } = await import("pdfkit");
+  const pdf = new PDFDocument({ size: "A4", margins: { top: 56, bottom: 64, left: 56, right: 56 }, bufferPages: true, info: { Title: doc.title, Creator: "Krama" } });
+  const chunks: Buffer[] = [];
+  pdf.on("data", (c: Buffer) => chunks.push(c));
+  const done = new Promise<Buffer>((res) => pdf.on("end", () => res(Buffer.concat(chunks))));
+  const L = pdf.page.margins.left, W = pdf.page.width - L - pdf.page.margins.right;
+  const bottom = () => pdf.page.height - pdf.page.margins.bottom;
+  const ensure = (h: number) => { if (pdf.y + h > bottom()) pdf.addPage(); };
+
+  const drawTable = (head: string[], rows: string[][], widths?: number[]) => {
+    const total = widths?.reduce((a, b) => a + b, 0) ?? head.length;
+    const cols = head.map((_, i) => ((widths?.[i] ?? 1) / total) * W);
+    const pad = 5;
+    const rowH = (cells: string[], bold: boolean) => {
+      pdf.font(bold ? "Helvetica-Bold" : "Helvetica").fontSize(8.5);
+      return Math.max(...cells.map((c, i) => pdf.heightOfString(pdfText(c), { width: cols[i]! - 2 * pad }))) + 2 * pad;
+    };
+    const drawRow = (cells: string[], header: boolean) => {
+      const h = rowH(cells, header);
+      if (pdf.y + h > bottom()) { pdf.addPage(); if (!header) drawRow(head, true); }
+      const y = pdf.y; let x = L;
+      cells.forEach((c, i) => {
+        if (header) pdf.rect(x, y, cols[i]!, h).fill("#EAF1FB");
+        pdf.rect(x, y, cols[i]!, h).lineWidth(0.5).strokeColor("#D5DEEC").stroke();
+        pdf.fillColor(header ? "#10213F" : "#1F2937").font(header ? "Helvetica-Bold" : "Helvetica").fontSize(8.5)
+          .text(pdfText(c), x + pad, y + pad, { width: cols[i]! - 2 * pad });
+        x += cols[i]!;
+      });
+      pdf.x = L; pdf.y = y + h;
+    };
+    drawRow(head, true);
+    for (const r of rows) drawRow(r, false);
+    pdf.moveDown(0.8);
+  };
+
+  pdf.fillColor("#10213F").font("Helvetica-Bold").fontSize(20).text(pdfText(doc.title), L, pdf.y, { width: W });
+  if (doc.subtitle) pdf.moveDown(0.2).fillColor("#4A5875").font("Helvetica").fontSize(11).text(pdfText(doc.subtitle), { width: W });
+  pdf.moveDown(0.8);
+  if (doc.meta.length) drawTable(["Item", "Detail"], doc.meta.map(([a, b]) => [a, b]), [28, 72]);
+  for (const s of doc.sections) {
+    ensure(60);
+    pdf.moveDown(0.4).fillColor(s.level === 2 ? "#1E6FD9" : "#10213F").font("Helvetica-Bold").fontSize(s.level === 2 ? 11.5 : 14).text(pdfText(s.heading), L, pdf.y, { width: W });
+    pdf.moveDown(0.4);
+    for (const b of s.blocks) {
+      if (b.kind === "p") { ensure(30); pdf.fillColor(b.muted ? "#4A5875" : "#1F2937").font(b.muted ? "Helvetica-Oblique" : "Helvetica").fontSize(10).text(pdfText(b.text), L, pdf.y, { width: W }); pdf.moveDown(0.5); }
+      if (b.kind === "bullets") { for (const it of b.items) { ensure(20); pdf.fillColor("#1F2937").font("Helvetica").fontSize(10).text(`•  ${pdfText(it)}`, L + 8, pdf.y, { width: W - 8 }); pdf.moveDown(0.15); } pdf.moveDown(0.4); }
+      if (b.kind === "table") drawTable(b.head, b.rows, b.widths);
+    }
+  }
+  const range = pdf.bufferedPageRange();
+  for (let i = 0; i < range.count; i++) {
+    pdf.switchToPage(range.start + i);
+    const y = pdf.page.height - 40;
+    pdf.page.margins.bottom = 0;
+    pdf.fillColor("#4A5875").font("Helvetica").fontSize(7.5).text(`${pdfText(doc.footer)}  ·  Page ${i + 1} of ${range.count}`, L, y, { width: W, align: "center", lineBreak: false });
+  }
+  pdf.end();
+  return done;
+}
+
+export type FileFormat = "docx" | "pdf" | "md";
+/** One rendered document as a download in the chosen format. */
+export async function renderFile(doc: RenderDoc, baseName: string, format: FileFormat): Promise<{ name: string; type: string; body: Buffer }> {
+  if (format === "md") return { name: `${baseName}.md`, type: "text/markdown; charset=utf-8", body: Buffer.from(toMarkdown(doc)) };
+  if (format === "pdf") return { name: `${baseName}.pdf`, type: "application/pdf", body: await toPdf(doc) };
+  return { name: `${baseName}.docx`, type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", body: await toDocx(doc) };
+}

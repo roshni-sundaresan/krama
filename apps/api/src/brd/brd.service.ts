@@ -19,7 +19,7 @@ import { StorageService } from "../storage/storage.service.js";
 import { ProjectsService } from "../projects/projects.service.js";
 import { SourcesService } from "../sources/sources.module.js";
 import { fail } from "../common/errors.js";
-import { footerText, toDocx, toMarkdown, type RenderDoc } from "../common/render.js";
+import { footerText, renderFile, type FileFormat, type RenderDoc } from "../common/render.js";
 import type { AuthUser } from "../common/auth-user.js";
 
 const EDITABLE = new Set(["DRAFT", "CHANGES_REQUESTED"]);
@@ -353,7 +353,7 @@ export class BrdService {
 
   // ---------- export ----------
 
-  async export(user: AuthUser, documentId: string, format: "docx" | "md") {
+  async export(user: AuthUser, documentId: string, format: FileFormat) {
     const doc = await this.docForUser(user, documentId);
     const project = await this.prisma.project.findUniqueOrThrow({ where: { id: doc.projectId } });
     const [reqs, findings] = await Promise.all([
@@ -392,8 +392,6 @@ export class BrdService {
     };
     await this.audit.record({ tenantId: user.tenantId, actorId: user.id, action: "document.downloaded", entityType: "document", entityId: documentId, projectId: doc.projectId, data: { format, version: doc.version } });
     const name = `${project.code}_BRD_v${doc.version}`;
-    return format === "md"
-      ? { name: `${name}.md`, type: "text/markdown; charset=utf-8", body: Buffer.from(toMarkdown(r)) }
-      : { name: `${name}.docx`, type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", body: await toDocx(r) };
+    return renderFile(r, name, format);
   }
 }

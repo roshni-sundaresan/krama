@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { DOMAINS, DOMAIN_LABELS, VERTICALS, VERTICAL_LABELS, type Vertical } from "@krama/shared";
-import { Chip, DownloadLink, LEVEL_LABEL, PageHead, levelTone, one, type SP } from "@/components/ui";
+import { DownloadMenu } from "@/components/menu";
+import { Chip, LEVEL_LABEL, PageHead, levelTone, one, type SP } from "@/components/ui";
 import { api } from "@/lib/api";
 import { requireUser } from "@/lib/session";
 import type { PackRule } from "@/lib/types";
@@ -53,8 +54,7 @@ export default async function LibraryPage({ searchParams }: { searchParams: SP }
           <div className="between" style={{ padding: "16px 20px" }}>
             <h2>{v.label} guardrails ({rules.length})</h2>
             <span className="row" style={{ gap: 6 }}>
-              <DownloadLink path={dl("guardrails", "docx")}>Word</DownloadLink>
-              <DownloadLink path={dl("guardrails", "md")}>Markdown</DownloadLink>
+              <DownloadMenu items={[{ label: "Word", hint: ".docx", path: dl("guardrails", "docx") }, { label: "PDF", hint: ".pdf", path: dl("guardrails", "pdf") }]} />
             </span>
           </div>
           <div className="row" style={{ padding: "0 20px 12px", gap: 6 }}>
@@ -81,7 +81,7 @@ export default async function LibraryPage({ searchParams }: { searchParams: SP }
           <section className="card col">
             <div className="between">
               <h2>{v.blueprint.title}</h2>
-              <DownloadLink path={dl("blueprints", "docx")}>Word</DownloadLink>
+              <DownloadMenu items={[{ label: "Word", hint: ".docx", path: dl("blueprints", "docx") }, { label: "PDF", hint: ".pdf", path: dl("blueprints", "pdf") }]} />
             </div>
             {v.blueprint.sections.map((s) => (
               <div key={s.heading}>

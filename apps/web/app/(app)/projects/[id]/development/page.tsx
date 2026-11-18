@@ -1,6 +1,7 @@
 import { DOMAIN_LABELS } from "@krama/shared";
 import { checkRepo, checkUpload, confirmChecklist, decideException, requestException } from "@/app/actions";
-import { Chip, DownloadLink, Empty, Flash, LEVEL_LABEL, NotFound, PageHead, levelTone, type SP, type Tone } from "@/components/ui";
+import { DownloadMenu, wordPdf } from "@/components/menu";
+import { Chip, Empty, Flash, LEVEL_LABEL, NotFound, PageHead, levelTone, type SP, type Tone } from "@/components/ui";
 import { load } from "@/lib/api";
 import { fmtDate, fmtDay } from "@/lib/format";
 import { can, requireUser } from "@/lib/session";
@@ -56,7 +57,7 @@ export default async function DevelopmentPage({ params, searchParams }: { params
             <section className="card col">
               <div className="between">
                 <h2>1 · Software checklist for this stack</h2>
-                <DownloadLink path={`/projects/${id}/packs/${pack.id}/download?kind=checklist&format=docx`}>Download checklist</DownloadLink>
+                <DownloadMenu label="Download checklist" items={wordPdf(`/projects/${id}/packs/${pack.id}/download?kind=checklist`)} />
               </div>
               <form action={confirmChecklist.bind(null, id)} className="col">
                 <table className="t">
@@ -93,7 +94,7 @@ export default async function DevelopmentPage({ params, searchParams }: { params
               ].map(([t, d, k, f, label]) => (
                 <div key={k} className="between stmt" style={{ flexDirection: "row" }}>
                   <div className="col" style={{ gap: 2 }}><b>{t}</b><span className="tiny muted">{d}</span></div>
-                  {confirmed || !isDev ? <DownloadLink path={`/projects/${id}/packs/${pack.id}/download?kind=${k}&format=${f}`}>{label}</DownloadLink> : <span className="btn sm" aria-disabled="true">{label}</span>}
+                  {confirmed || !isDev ? (f === "docx" ? <DownloadMenu items={wordPdf(`/projects/${id}/packs/${pack.id}/download?kind=${k}`)} /> : <DownloadMenu items={[{ label: k === "rules" ? "AGENTS.md" : "guardrails.json", hint: label, path: `/projects/${id}/packs/${pack.id}/download?kind=${k}&format=${f}` }]} />) : <span className="btn sm" aria-disabled="true">Download ▾</span>}
                 </div>
               ))}
               <p className="tiny muted" style={{ margin: 0 }}>Steps 3 to 5 happen in your own repository and AI coding tool. Never paste client personal data into a prompt.</p>

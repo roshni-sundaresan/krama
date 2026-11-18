@@ -1,8 +1,10 @@
 import Link from "next/link";
+import { Fragment } from "react";
+import { ActionsMenu } from "@/components/menu";
 import { DOC_TAGS, DOC_TAG_LABELS, DOMAIN_LABELS, ENTITY_LABELS, type DocTag } from "@krama/shared";
 import { confirmMasking, importIdhi, startDraft, tagSource, updateIntake, uploadSource } from "@/app/actions";
 import { IntakeForm } from "@/components/intake-form";
-import { Chip, DownloadLink, Empty, Flash, LEVEL_LABEL, NotFound, PageHead, type SP } from "@/components/ui";
+import { Chip, Empty, Flash, LEVEL_LABEL, NotFound, PageHead, one, type SP } from "@/components/ui";
 import { api, load } from "@/lib/api";
 import { fmtDay } from "@/lib/format";
 import { can, requireUser } from "@/lib/session";
@@ -10,6 +12,9 @@ import type { Project, Readiness, Source } from "@/lib/types";
 
 export default async function IntakePage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: SP }) {
   const { id } = await params;
+  const sp = await searchParams;
+  const openId = one(sp.tag) ?? one(sp.view);
+  const openKind = one(sp.tag) ? "tag" : "view";
   const user = await requireUser();
   const p = await load<Project>(`/projects/${id}`);
   if (!p) return <NotFound />;
@@ -106,57 +111,75 @@ export default async function IntakePage({ params, searchParams }: { params: Pro
           <div style={{ padding: "0 20px 20px" }}><Empty>No inputs yet. Upload the SOW and at least one MOM or client document.</Empty></div>
         ) : (
           <table className="t">
-            <thead><tr><th>File</th><th>Type</th><th>Version / date</th><th>Provided by</th><th>Personal data</th><th>Status</th></tr></thead>
+            <thead><tr><th>File</th><th>Type</th><th>Version / date</th><th>Provided by</th><th>Personal data</th><th>Status</th><th /></tr></thead>
             <tbody>
               {sources.map((s) => {
                 const tagged = Boolean(s.docType && s.version && s.docDate && s.provider);
                 const pii = s.piiFindings.reduce((n, f) => n + f.count, 0);
                 const needsMask = s.personalData && !s.maskingConfirmedAt;
+                const open = openId === s.id ? openKind : null;
                 return (
-                  <tr key={s.id}>
-                    <td>
-                      <span style={{ fontWeight: 600 }}>{s.title}</span>
-                      <div className="tiny muted">{s.kind === "IDHI_MEETING" ? "iDhi meeting" : "Upload"} · added {fmtDay(s.createdAt)}</div>
-                      {s.injectionFlags.length > 0 && <div className="tiny" style={{ color: "#a12a26" }}>Instruction-like text found; Krama treats it as data only.</div>}
-                    </td>
-                    <td>{s.docType ? DOC_TAG_LABELS[s.docType as DocTag] : <Chip tone="warn">Not tagged</Chip>}</td>
-                    <td className="small">{s.version ? `v${s.version}` : "—"}{s.docDate ? ` · ${s.docDate}` : ""}</td>
-                    <td className="small">{s.provider ?? "—"}</td>
-                    <td className="small">
-                      {s.personalData ? (s.maskingConfirmedAt ? "Yes, masked" : "Yes, review masking") : "No"}
-                      {pii > 0 && <div className="tiny muted">{s.piiFindings.map((f) => `${f.type} ${f.count}`).join(", ")} masked</div>}
-                    </td>
-                    <td>
-                      <div className="col" style={{ gap: 6, alignItems: "flex-start" }}>
-                        {!tagged ? <Chip tone="warn">Tag document</Chip> : needsMask ? <Chip tone="block">Confirm masking</Chip> : <Chip tone="ok">Read</Chip>}
-                        {edit && (
-                          <details>
-                            <summary className="tiny" style={{ cursor: "pointer", color: "var(--blue)" }}>{tagged ? "Edit tags / view masked copy" : "Tag now"}</summary>
-                            <form action={tagSource.bind(null, id, s.id)} className="col" style={{ gap: 8, marginTop: 8, minWidth: 280 }}>
-                              <select name="docType" className="input" defaultValue={s.docType ?? ""} required>
-                                <option value="" disabled>Document type</option>
-                                {DOC_TAGS.map((t) => <option key={t} value={t}>{DOC_TAG_LABELS[t]}</option>)}
-                              </select>
-                              <div className="row" style={{ flexWrap: "nowrap" }}>
-                                <input name="version" className="input" placeholder="Version" required defaultValue={s.version ?? ""} />
-                                <input name="docDate" type="date" className="input" required defaultValue={s.docDate ?? ""} />
-                              </div>
-                              <input name="provider" className="input" placeholder="Provided by" required defaultValue={s.provider ?? ""} />
-                              <label className="row tiny" style={{ gap: 6 }}><input type="checkbox" name="personalData" defaultChecked={s.personalData || pii > 0} /> Contains personal data</label>
-                              <button className="btn sm">Save tags</button>
+                  <Fragment key={s.id}>
+                    <tr>
+                      <td>
+                        <span style={{ fontWeight: 600 }}>{s.title}</span>
+                        <div className="tiny muted">{s.kind === "IDHI_MEETING" ? "iDhi meeting" : "Upload"} · added {fmtDay(s.createdAt)}</div>
+                        {s.injectionFlags.length > 0 && <div className="tiny" style={{ color: "#a12a26" }}>Instruction-like text found; Krama treats it as data only.</div>}
+                      </td>
+                      <td>{s.docType ? DOC_TAG_LABELS[s.docType as DocTag] : <Chip tone="warn">Not tagged</Chip>}</td>
+                      <td className="small">{s.version ? `v${s.version}` : "—"}{s.docDate ? ` · ${s.docDate}` : ""}</td>
+                      <td className="small">{s.provider ?? "—"}</td>
+                      <td className="small">
+                        {s.personalData ? (s.maskingConfirmedAt ? "Yes, masked" : "Yes, review masking") : "No"}
+                        {pii > 0 && <div className="tiny muted">{s.piiFindings.map((f) => `${f.type} ${f.count}`).join(", ")} masked</div>}
+                      </td>
+                      <td>{!tagged ? <Chip tone="warn">Tag document</Chip> : needsMask ? <Chip tone="block">Confirm masking</Chip> : <Chip tone="ok">Read</Chip>}</td>
+                      <td style={{ textAlign: "right" }}>
+                        <ActionsMenu label={`Actions for ${s.title}`}>
+                          {edit && <Link className="menu-item" role="menuitem" href={`/projects/${id}/intake?tag=${s.id}`}>{tagged ? "Edit tags" : "Tag document"}</Link>}
+                          <Link className="menu-item" role="menuitem" href={`/projects/${id}/intake?view=${s.id}`}>{needsMask ? "Review masked copy" : "View masked copy"}</Link>
+                          {s.kind === "UPLOAD" && s.sizeBytes ? <a className="menu-item" role="menuitem" href={`/api/download?path=${encodeURIComponent(`/projects/${id}/sources/${s.id}/file`)}`}>Download original</a> : null}
+                          {edit && needsMask && (
+                            <>
+                              <div className="menu-sep" />
+                              <form action={confirmMasking.bind(null, id, s.id)}><button className="menu-item" role="menuitem">Confirm masking</button></form>
+                            </>
+                          )}
+                        </ActionsMenu>
+                      </td>
+                    </tr>
+                    {open && (
+                      <tr>
+                        <td colSpan={7} style={{ background: "#f8fafd" }}>
+                          {open === "tag" && edit ? (
+                            <form action={tagSource.bind(null, id, s.id)} className="row" style={{ gap: 8, alignItems: "flex-end" }}>
+                              <label className="f" style={{ minWidth: 200 }}>Document type
+                                <select name="docType" className="input" defaultValue={s.docType ?? ""} required>
+                                  <option value="" disabled>Choose</option>
+                                  {DOC_TAGS.map((t) => <option key={t} value={t}>{DOC_TAG_LABELS[t]}</option>)}
+                                </select>
+                              </label>
+                              <label className="f" style={{ width: 110 }}>Version<input name="version" className="input" required defaultValue={s.version ?? ""} /></label>
+                              <label className="f" style={{ width: 170 }}>Date<input name="docDate" type="date" className="input" required defaultValue={s.docDate ?? ""} /></label>
+                              <label className="f" style={{ minWidth: 180 }}>Provided by<input name="provider" className="input" required defaultValue={s.provider ?? ""} /></label>
+                              <label className="row small" style={{ gap: 6, paddingBottom: 10 }}><input type="checkbox" name="personalData" defaultChecked={s.personalData || pii > 0} /> Contains personal data</label>
+                              <button className="btn primary">Save tags</button>
+                              <Link className="btn" href={`/projects/${id}/intake`}>Cancel</Link>
                             </form>
-                            <div className="code" style={{ marginTop: 8, maxHeight: 180, overflow: "auto", maxWidth: 420 }}>{s.maskedText.slice(0, 1500)}</div>
-                            {needsMask && (
-                              <form action={confirmMasking.bind(null, id, s.id)} style={{ marginTop: 8 }}>
-                                <button className="btn sm primary">I have checked the masked copy</button>
-                              </form>
-                            )}
-                          </details>
-                        )}
-                        {s.kind === "UPLOAD" && s.sizeBytes ? <DownloadLink className="tiny" path={`/projects/${id}/sources/${s.id}/file`}>Download original</DownloadLink> : null}
-                      </div>
-                    </td>
-                  </tr>
+                          ) : (
+                            <div className="col" style={{ gap: 8 }}>
+                              <span className="small"><b>Masked copy</b> · this is the only text Krama sends to AI</span>
+                              <div className="code" style={{ maxHeight: 220, overflow: "auto" }}>{s.maskedText.slice(0, 3000)}</div>
+                              <div className="row">
+                                {edit && needsMask && <form action={confirmMasking.bind(null, id, s.id)}><button className="btn sm primary">I have checked the masked copy</button></form>}
+                                <Link className="btn sm" href={`/projects/${id}/intake`}>Close</Link>
+                              </div>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
                 );
               })}
             </tbody>

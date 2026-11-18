@@ -12,7 +12,7 @@ const DownloadQuery = z.object({
   kind: z.enum(["guardrails", "blueprints", "rules", "checklist", "ci"]).default("guardrails"),
   vertical: z.enum(VERTICALS).optional(),
   topic: z.string().max(40).optional(),
-  format: z.enum(["docx", "md"]).default("docx"),
+  format: z.enum(["docx", "pdf", "md"]).default("docx"),
 });
 const LibraryQuery = z.object({ domain: DomainSchema.optional(), entityType: EntityTypeSchema.optional(), vertical: z.enum(VERTICALS).optional() });
 const LibraryDownloadQuery = z.object({
@@ -20,7 +20,7 @@ const LibraryDownloadQuery = z.object({
   vertical: z.enum(VERTICALS),
   domain: DomainSchema.optional(),
   topic: z.string().max(40).optional(),
-  format: z.enum(["docx", "md"]).default("docx"),
+  format: z.enum(["docx", "pdf", "md"]).default("docx"),
 });
 const PreviewQuery = z.object({ stackKey: z.string(), domain: DomainSchema, entityType: EntityTypeSchema.optional() });
 

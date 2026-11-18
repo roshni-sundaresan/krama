@@ -28,7 +28,7 @@ import { PrismaService } from "../prisma/prisma.service.js";
 import { AuditService } from "../audit/audit.service.js";
 import { ProjectsService } from "../projects/projects.service.js";
 import { fail } from "../common/errors.js";
-import { footerText, toDocx, toMarkdown, type RenderDoc, type RenderSection } from "../common/render.js";
+import { footerText, renderFile, type FileFormat, type RenderDoc, type RenderSection } from "../common/render.js";
 import type { AuthUser } from "../common/auth-user.js";
 
 export interface PackContent {
@@ -192,7 +192,7 @@ export class PacksService {
     user: AuthUser,
     projectId: string,
     packId: string,
-    opts: { kind: "guardrails" | "blueprints" | "rules" | "checklist" | "ci"; vertical?: Vertical; topic?: string; format: "docx" | "md" },
+    opts: { kind: "guardrails" | "blueprints" | "rules" | "checklist" | "ci"; vertical?: Vertical; topic?: string; format: FileFormat },
   ) {
     const project = await this.projects.getOrThrow(user, projectId);
     const pack = await this.prisma.guardrailPack.findFirst({ where: { id: packId, projectId } });
@@ -237,9 +237,7 @@ export class PacksService {
       doc = this.guardrailDoc(`${project.name} — ${opts.topic ? TOPIC_LABELS[opts.topic] ?? opts.topic : opts.vertical ? VERTICAL_LABELS[opts.vertical] : "All"} guardrails`, meta, rules, c.regulations, footer);
     }
     const name = `${base}_${opts.kind}${opts.vertical ? `_${opts.vertical.toLowerCase()}` : ""}${opts.topic ? `_${opts.topic}` : ""}`;
-    return opts.format === "md"
-      ? { name: `${name}.md`, type: "text/markdown; charset=utf-8", body: Buffer.from(toMarkdown(doc)) }
-      : { name: `${name}.docx`, type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", body: await toDocx(doc) };
+    return renderFile(doc, name, opts.format);
   }
 
   guardrailDoc(title: string, meta: [string, string][], rules: CatalogRule[], regs: Regulation[], footer: string): RenderDoc {
@@ -306,7 +304,7 @@ export class PacksService {
     return { version: "Master v1.0", byVertical, rules, regulations: regulationsFor(rules) };
   }
 
-  async libraryDownload(user: AuthUser, opts: { kind: "guardrails" | "blueprints"; vertical: Vertical; domain?: Domain; topic?: string; format: "docx" | "md" }) {
+  async libraryDownload(user: AuthUser, opts: { kind: "guardrails" | "blueprints"; vertical: Vertical; domain?: Domain; topic?: string; format: FileFormat }) {
     const lib = this.library({ vertical: opts.vertical, domain: opts.domain });
     const footer = footerText({ project: "Master library", version: lib.version, user: user.email });
     const meta: [string, string][] = [["Vertical", VERTICAL_LABELS[opts.vertical]], ["Domain filter", opts.domain ? DOMAIN_LABELS[opts.domain] : "All domains"], ["Version", lib.version]];
@@ -319,8 +317,6 @@ export class PacksService {
         : this.guardrailDoc(`${VERTICAL_LABELS[opts.vertical]} guardrails${opts.topic ? ` — ${TOPIC_LABELS[opts.topic] ?? opts.topic}` : ""}`, meta, lib.rules.filter((r) => !opts.topic || r.topic === opts.topic), lib.regulations, footer);
     await this.audit.record({ tenantId: user.tenantId, actorId: user.id, action: "library.downloaded", entityType: "library", entityId: opts.vertical, data: opts });
     const name = `Krama_${opts.vertical.toLowerCase()}_${opts.kind}${opts.topic ? `_${opts.topic}` : ""}${opts.domain ? `_${opts.domain.toLowerCase()}` : ""}`;
-    return opts.format === "md"
-      ? { name: `${name}.md`, type: "text/markdown; charset=utf-8", body: Buffer.from(toMarkdown(doc)) }
-      : { name: `${name}.docx`, type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", body: await toDocx(doc) };
+    return renderFile(doc, name, opts.format);
   }
 }

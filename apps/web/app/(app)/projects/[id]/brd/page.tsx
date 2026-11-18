@@ -2,7 +2,8 @@ import Link from "next/link";
 import { BRD_SECTIONS, LENS_LABELS, runBrdRuleChecks, type RuleFinding } from "@krama/shared";
 import { confirmAllRequirements, findingAction, startDraft, statementAction, submitBrd, updateRequirement } from "@/app/actions";
 import { AutoRefresh } from "@/components/nav";
-import { Chip, DownloadLink, Empty, Flash, NotFound, PageHead, one, type SP, type Tone } from "@/components/ui";
+import { DownloadMenu, wordPdf } from "@/components/menu";
+import { Chip, Empty, Flash, NotFound, PageHead, one, type SP, type Tone } from "@/components/ui";
 import { load } from "@/lib/api";
 import { fmtDate, human } from "@/lib/format";
 import { can, requireUser } from "@/lib/session";
@@ -103,8 +104,7 @@ export default async function BrdPage({ params, searchParams }: { params: Promis
           </span>
         }
       >
-        <DownloadLink path={`/documents/${doc.id}/export?format=docx`}>Export Word</DownloadLink>
-        <DownloadLink path={`/documents/${doc.id}/export?format=md`}>Markdown</DownloadLink>
+        <DownloadMenu label="Export" items={[...wordPdf(`/documents/${doc.id}/export`), { label: "Markdown", hint: ".md", path: `/documents/${doc.id}/export?format=md` }]} />
         {editable && can(user, "brd.submit") && (
           <form action={submitBrd.bind(null, id, doc.id)}>
             <button className="btn primary">Run Deep Audit & submit</button>

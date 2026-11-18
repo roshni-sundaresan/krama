@@ -3,7 +3,7 @@ import { raw } from "@/lib/api";
 
 // Only these API paths may be fetched through the proxy (files, never JSON data APIs).
 const ALLOWED = [
-  /^\/documents\/[\w-]+\/export(\?format=(docx|md))?$/,
+  /^\/documents\/[\w-]+\/export(\?format=(docx|pdf|md))?$/,
   /^\/projects\/[\w-]+\/packs\/[\w-]+\/download\?[\w=&%.-]*$/,
   /^\/projects\/[\w-]+\/sources\/[\w-]+\/file$/,
   /^\/library\/download\?[\w=&%.-]*$/,

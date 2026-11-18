@@ -1,6 +1,7 @@
 import { DOMAINS, DOMAIN_LABELS, ENTITY_LABELS, ENTITY_TYPES, VERTICAL_LABELS, type Vertical } from "@krama/shared";
 import { addMember, packDecision, regeneratePack, selectStack } from "@/app/actions";
-import { Chip, DownloadLink, Empty, Flash, NotFound, PageHead, one, type SP, type Tone } from "@/components/ui";
+import { DownloadMenu, wordPdf } from "@/components/menu";
+import { Chip, Empty, Flash, NotFound, PageHead, one, type SP, type Tone } from "@/components/ui";
 import { api, load } from "@/lib/api";
 import { fmtDate, fmtDay } from "@/lib/format";
 import { can, requireUser } from "@/lib/session";
@@ -127,7 +128,7 @@ export default async function StackPage({ params, searchParams }: { params: Prom
           {current && (
             <div className="row">
               <Chip tone={PACK_TONE[current.status]}>{PACK_LABEL[current.status]}</Chip>
-              {current.status === "APPROVED" && <DownloadLink path={`/projects/${id}/packs/${current.id}/download?kind=guardrails&format=docx`}>Download full pack (Word)</DownloadLink>}
+              {current.status === "APPROVED" && <DownloadMenu label="Download full pack" items={wordPdf(`/projects/${id}/packs/${current.id}/download?kind=guardrails`)} />}
             </div>
           )}
         </div>
@@ -148,7 +149,7 @@ export default async function StackPage({ params, searchParams }: { params: Prom
                       <td><b>{VERTICAL_LABELS[v]} guardrails</b><div className="tiny muted">{[...new Set(rules.map((r) => r.topic))].join(", ")}</div></td>
                       <td>v{current.version}</td>
                       <td className="small">{counts(rules)}</td>
-                      <td>{current.status === "APPROVED" ? <span className="row" style={{ gap: 6 }}><DownloadLink path={`/projects/${id}/packs/${current.id}/download?kind=guardrails&vertical=${v}&format=docx`}>Word</DownloadLink><DownloadLink path={`/projects/${id}/packs/${current.id}/download?kind=guardrails&vertical=${v}&format=md`}>Markdown</DownloadLink></span> : <span className="tiny muted">After approval</span>}</td>
+                      <td>{current.status === "APPROVED" ? <DownloadMenu items={wordPdf(`/projects/${id}/packs/${current.id}/download?kind=guardrails&vertical=${v}`)} /> : <span className="tiny muted">After approval</span>}</td>
                     </tr>
                   );
                 })}
@@ -162,7 +163,7 @@ export default async function StackPage({ params, searchParams }: { params: Prom
                     <td><b>{t}</b><div className="tiny muted">{d}</div></td>
                     <td>v{current.version}</td>
                     <td className="small">{k === "ci" ? `${current.content.rules.filter((r) => r.check).length} checks` : "—"}</td>
-                    <td>{current.status === "APPROVED" ? <DownloadLink path={`/projects/${id}/packs/${current.id}/download?kind=${k}&format=${f}`}>Download</DownloadLink> : <span className="tiny muted">After approval</span>}</td>
+                    <td>{current.status === "APPROVED" ? <DownloadMenu items={f === "docx" ? wordPdf(`/projects/${id}/packs/${current.id}/download?kind=${k}`) : [{ label: k === "rules" ? "AGENTS.md" : "guardrails.json", hint: k === "rules" ? "Markdown" : "JSON", path: `/projects/${id}/packs/${current.id}/download?kind=${k}&format=${f}` }]} /> : <span className="tiny muted">After approval</span>}</td>
                   </tr>
                 ))}
               </tbody>

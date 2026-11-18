@@ -1,6 +1,9 @@
 import { ROLES, ROLE_LABELS, type Role } from "@krama/shared";
 import { addUser, updateUser } from "@/app/actions";
-import { Chip, Flash, PageHead, type SP } from "@/components/ui";
+import Link from "next/link";
+import { ActionsMenu } from "@/components/menu";
+import { MultiSelect } from "@/components/multi-select";
+import { Chip, Flash, PageHead, one, type SP } from "@/components/ui";
 import { api } from "@/lib/api";
 import { fmtDate } from "@/lib/format";
 import { can, requireUser } from "@/lib/session";
@@ -10,6 +13,8 @@ interface Log { id: string; action: string; actorName: string; entityType: strin
 
 export default async function AccessPage({ searchParams }: { searchParams: SP }) {
   const user = await requireUser();
+  const edit = one((await searchParams).edit);
+  const roleOptions = ROLES.map((r) => ({ value: r, label: ROLE_LABELS[r] }));
   if (!can(user, "users.manage")) {
     return (
       <>
@@ -35,30 +40,32 @@ export default async function AccessPage({ searchParams }: { searchParams: SP })
               <tr key={u.id}>
                 <td><b>{u.name}</b><div className="tiny muted">{u.email}</div></td>
                 <td>
-                  <details>
-                    <summary style={{ cursor: "pointer" }} className="row">
-                      {u.roles.length ? u.roles.map((r) => <Chip key={r} tone="info">{ROLE_LABELS[r]}</Chip>) : <Chip tone="warn">No role (pending)</Chip>}
-                    </summary>
-                    <form action={updateUser.bind(null, u.id)} className="col" style={{ gap: 6, marginTop: 8 }}>
+                  {edit === u.id ? (
+                    <form action={updateUser.bind(null, u.id)} className="row" style={{ gap: 6, alignItems: "flex-start", flexWrap: "nowrap" }}>
                       <input type="hidden" name="rolesSent" value="1" />
-                      <div className="grid2" style={{ gap: 4 }}>
-                        {ROLES.map((r) => (
-                          <label key={r} className="row tiny" style={{ gap: 6 }}><input type="checkbox" name="roles" value={r} defaultChecked={u.roles.includes(r)} /> {ROLE_LABELS[r]}</label>
-                        ))}
-                      </div>
-                      <button className="btn sm" style={{ alignSelf: "flex-start" }}>Save roles</button>
+                      <div style={{ minWidth: 260 }}><MultiSelect name="roles" placeholder="No role (pending)" options={roleOptions} defaultValue={u.roles} /></div>
+                      <button className="btn sm primary">Save</button>
+                      <Link className="btn sm" href="/access">Cancel</Link>
                     </form>
-                  </details>
+                  ) : (
+                    <span className="row" style={{ gap: 6 }}>{u.roles.length ? u.roles.map((r) => <Chip key={r} tone="info">{ROLE_LABELS[r]}</Chip>) : <Chip tone="warn">No role (pending)</Chip>}</span>
+                  )}
                 </td>
                 <td><Chip tone={u.active ? "ok" : "grey"}>{u.active ? "Active" : "Deactivated"}</Chip></td>
                 <td className="small muted">{u.lastSignInAt ? fmtDate(u.lastSignInAt) : "Never"}</td>
-                <td>
-                  {u.id !== user.id && (
-                    <form action={updateUser.bind(null, u.id)}>
-                      <input type="hidden" name="active" value={u.active ? "false" : "true"} />
-                      <button className={`btn sm ${u.active ? "danger" : ""}`}>{u.active ? "Deactivate" : "Reactivate"}</button>
-                    </form>
-                  )}
+                <td style={{ textAlign: "right" }}>
+                  <ActionsMenu label={`Actions for ${u.name}`}>
+                    <Link className="menu-item" role="menuitem" href={`/access?edit=${u.id}`}>Edit roles</Link>
+                    {u.id !== user.id && (
+                      <>
+                        <div className="menu-sep" />
+                        <form action={updateUser.bind(null, u.id)}>
+                          <input type="hidden" name="active" value={u.active ? "false" : "true"} />
+                          <button className={`menu-item ${u.active ? "danger" : ""}`} role="menuitem">{u.active ? "Deactivate access" : "Reactivate access"}</button>
+                        </form>
+                      </>
+                    )}
+                  </ActionsMenu>
                 </td>
               </tr>
             ))}
@@ -74,10 +81,10 @@ export default async function AccessPage({ searchParams }: { searchParams: SP })
               <label className="f">Name<input name="name" className="input" required minLength={2} /></label>
               <label className="f">Idealake email<input name="email" type="email" className="input" required placeholder="name@idealake.com" /></label>
             </div>
-            <fieldset className="grid2" style={{ gap: 4, border: "1px solid var(--line)", borderRadius: 8, padding: 12 }}>
-              <legend className="small" style={{ fontWeight: 600, padding: "0 4px" }}>Roles</legend>
-              {ROLES.map((r) => <label key={r} className="row small" style={{ gap: 6 }}><input type="checkbox" name="roles" value={r} /> {ROLE_LABELS[r]}</label>)}
-            </fieldset>
+            <div className="f">
+              <span>Roles</span>
+              <MultiSelect name="roles" placeholder="Choose one or more roles" options={roleOptions} />
+            </div>
             <button className="btn primary" style={{ alignSelf: "flex-start" }}>Give access</button>
           </form>
         </section>

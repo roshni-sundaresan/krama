@@ -1,3 +1,4 @@
+import { MultiSelect } from "@/components/multi-select";
 import { DOMAINS, DOMAIN_LABELS, ENTITY_LABELS, ENTITY_TYPES, PLATFORMS } from "@krama/shared";
 
 export interface IntakeValues {
@@ -33,16 +34,10 @@ export function IntakeForm({ action, values = {}, submit, lockCode = false }: { 
           </select>
         </label>
       </div>
-      <fieldset className="col" style={{ border: "1px solid var(--line)", borderRadius: 8, padding: 12, gap: 8 }}>
-        <legend className="small" style={{ fontWeight: 600, padding: "0 4px" }}>Platforms</legend>
-        <div className="row">
-          {PLATFORMS.map((p) => (
-            <label key={p} className="row small" style={{ gap: 6 }}>
-              <input type="checkbox" name="platforms" value={p} defaultChecked={values.platforms?.includes(p)} /> {p}
-            </label>
-          ))}
-        </div>
-      </fieldset>
+      <div className="f">
+        <span id="platforms-label">Platforms</span>
+        <MultiSelect id="platforms" name="platforms" placeholder="Choose platforms" options={PLATFORMS.map((p) => ({ value: p, label: p }))} defaultValue={values.platforms ?? []} />
+      </div>
       <fieldset className="col" style={{ border: "1px solid var(--line)", borderRadius: 8, padding: 12, gap: 8 }}>
         <legend className="small" style={{ fontWeight: 600, padding: "0 4px" }}>Project flags (add guardrails to the pack)</legend>
         <label className="row small" style={{ gap: 6 }}><input type="checkbox" name="existingProduction" defaultChecked={values.existingProduction} /> Changes an existing client production system (no-breakage rules)</label>

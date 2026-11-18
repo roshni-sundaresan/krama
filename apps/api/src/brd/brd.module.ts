@@ -105,7 +105,7 @@ export class BrdController {
 
   @Get("documents/:id/export")
   async export(@CurrentUser() user: AuthUser, @Param("id") id: string, @Query("format") format: string | undefined, @Res() res: Response) {
-    const f = await this.brd.export(user, id, format === "md" ? "md" : "docx");
+    const f = await this.brd.export(user, id, format === "md" ? "md" : format === "pdf" ? "pdf" : "docx");
     res.setHeader("content-type", f.type);
     res.setHeader("content-disposition", `attachment; filename="${f.name}"`);
     res.send(f.body);

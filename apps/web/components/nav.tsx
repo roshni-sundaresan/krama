@@ -9,6 +9,17 @@ interface Item { key: string; label: string; role?: string; href?: string; later
 
 export function Nav({ user, projects }: { user: { name: string; roleLabel: string }; projects: { id: string; code: string; name: string; clientName: string }[] }) {
   const path = usePathname();
+  // Close open dropdowns (menus, multi-selects) on an outside click or Escape.
+  useEffect(() => {
+    const close = (e: Event) => {
+      document.querySelectorAll<HTMLDetailsElement>("details.menu[open], details.ms[open]").forEach((d) => {
+        if (e instanceof KeyboardEvent ? e.key === "Escape" : !d.contains(e.target as Node)) d.open = false;
+      });
+    };
+    document.addEventListener("click", close);
+    document.addEventListener("keydown", close);
+    return () => { document.removeEventListener("click", close); document.removeEventListener("keydown", close); };
+  }, []);
   const m = path.match(/^\/projects\/([^/]+)\/?([^/]*)/);
   const projectId = m && m[1] !== "new" ? m[1] : null;
   const project = projectId ? projects.find((p) => p.id === projectId) : undefined;
