@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { devSignIn, entraSignIn } from "@/app/actions";
+import { KramaIcon } from "@/components/brand";
 
 const API_URL = process.env.KRAMA_API_URL ?? "http://localhost:4000";
 
@@ -24,7 +25,7 @@ export default async function SignInPage({ searchParams }: { searchParams: Promi
     <main style={{ minHeight: "100vh", display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)" }} className="signin">
       <section style={{ background: "var(--navy)", color: "#fff", padding: "48px 56px", display: "flex", flexDirection: "column", justifyContent: "center", gap: 20 }}>
         <div className="row" style={{ gap: 12 }}>
-          <span style={{ width: 44, height: 44, borderRadius: 10, background: "var(--blue)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 22 }}>K</span>
+          <KramaIcon size={48} />
           <span className="col" style={{ gap: 0 }}>
             <span style={{ fontWeight: 700, fontSize: 24 }}>Krama</span>
             <span style={{ fontSize: 13, color: "#b8c6e0" }}>Idealake AI Engineering Framework</span>

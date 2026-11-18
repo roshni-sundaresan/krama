@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { signOutAction } from "@/app/actions";
+import { KramaIcon } from "@/components/brand";
 
 interface Item { key: string; label: string; role?: string; href?: string; later?: boolean }
 
@@ -66,7 +67,7 @@ export function Nav({ user, projects }: { user: { name: string; roleLabel: strin
   return (
     <nav aria-label="Krama" className="side">
       <Link href="/projects" className="row" style={{ gap: 10, padding: "0 8px", color: "#fff" }}>
-        <span style={{ width: 34, height: 34, borderRadius: 8, background: "var(--blue)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 18 }}>K</span>
+        <KramaIcon size={34} />
         <span className="col" style={{ gap: 0 }}>
           <span style={{ fontWeight: 700, fontSize: 18 }}>Krama</span>
           <span style={{ fontSize: 11, color: "#b8c6e0" }}>Idealake AI Engineering Framework</span>
