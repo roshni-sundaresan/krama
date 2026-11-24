@@ -54,6 +54,7 @@ services:
     ports: ["8080:8080"]
 
   api:
+    restart: unless-stopped
     build: { context: .., dockerfile: apps/api/Dockerfile }
     env_file: ../.env
     environment:
@@ -66,22 +67,27 @@ services:
     volumes: [krama-files:/data/uploads]
 
   web:
+    restart: unless-stopped
     build: { context: .., dockerfile: apps/web/Dockerfile }
     env_file: ../.env
     environment:
       KRAMA_API_URL: http://api:4000
+      # .env sets PORT=4000 for the API; the web app must listen on 3000.
+      PORT: "3000"
       AUTH_URL: http://localhost:3000
       AUTH_TRUST_HOST: "true"
     depends_on: [api]
     ports: ["3000:3000"]
 
   ts-worker:
+    restart: unless-stopped
     build: { context: .., dockerfile: packages/workflows/Dockerfile }
     env_file: ../.env
     environment: *app-env
     depends_on: [temporal, api]
 
   ai-worker:
+    restart: unless-stopped
     build: { context: ../workers/ai }
     env_file: ../.env
     environment:
