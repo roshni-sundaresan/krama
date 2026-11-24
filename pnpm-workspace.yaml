@@ -15,3 +15,8 @@ onlyBuiltDependencies:
 ignoredBuiltDependencies:
   - "@scarf/scarf"
   - protobufjs
+
+# Security pins for transitive dependencies (pnpm audit, high severity).
+overrides:
+  deepmerge-ts: ">=8.0.0"     # GHSA-ggr8-5vv4-36mx (via prisma > @prisma/config)
+  effect: ">=3.22.1 <4"       # GHSA-7589-6fvf-x4pw (via prisma > @prisma/config)
