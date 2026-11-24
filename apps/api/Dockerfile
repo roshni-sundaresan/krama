@@ -21,6 +21,8 @@ RUN pnpm --filter "@krama/api" exec prisma generate \
 FROM base AS runtime
 ENV NODE_ENV=production
 COPY --from=build /repo /repo
+# Uploaded files live on a volume mounted here; the node user must own it.
+RUN mkdir -p /data/uploads && chown node:node /data/uploads
 WORKDIR /repo/apps/api
 USER node
 EXPOSE 4000

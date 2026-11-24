@@ -51,7 +51,7 @@ docker compose -f infra/docker-compose.yml run --rm api pnpm db:seed
 ```
 
 Open http://localhost:3000. Other consoles: API docs http://localhost:4000/api/docs · Temporal UI
-http://localhost:8080 · MinIO http://localhost:9001.
+http://localhost:8080.
 
 To stop: `docker compose -f infra/docker-compose.yml down` (add `-v` to delete the data as well).
 
