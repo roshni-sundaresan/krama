@@ -58,7 +58,7 @@ export function Nav({ user, projects }: { user: { name: string; roleLabel: strin
         { key: "testing", label: "Testing tracker", role: "Next release", later: true },
       ],
     },
-    { label: "Admin", items: [{ key: "access", label: "Access administration", role: "Super Admin", href: "/access" }] },
+    { label: "Admin", items: [{ key: "guardrails", label: "Guardrail management", role: "Tech Architect · leads", href: "/guardrails" }, { key: "access", label: "Access administration", role: "Super Admin", href: "/access" }] },
   ];
 
   const active = (it: Item) =>

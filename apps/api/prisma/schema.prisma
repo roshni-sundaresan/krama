@@ -594,3 +594,35 @@ model TokenUsage {
 
   @@index([tenantId, createdAt])
 }
+
+enum GuardrailVersionStatus {
+  DRAFT
+  PUBLISHED
+  SUPERSEDED
+  DISCARDED
+}
+
+/// A version of one vertical's master guardrails, edited in Krama by that vertical's lead.
+/// Version 1 is the built-in catalogue; published versions replace it for new and regenerated packs.
+model GuardrailVersion {
+  id            String                 @id @default(cuid())
+  tenantId      String
+  vertical      String
+  version       Int
+  status        GuardrailVersionStatus @default(DRAFT)
+  /// CatalogRule[] for this vertical
+  rules         Json
+  changeNote    String
+  /// Revised guardrail document (Word or PDF) uploaded with this version
+  documentKey   String?
+  documentName  String?
+  documentType  String?
+  createdById   String
+  publishedById String?
+  publishedAt   DateTime?
+  createdAt     DateTime               @default(now())
+  updatedAt     DateTime               @updatedAt
+
+  @@unique([tenantId, vertical, version])
+  @@index([tenantId, vertical, status])
+}

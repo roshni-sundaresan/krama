@@ -3,6 +3,7 @@
 // platforms, stack and flags. Each pack names the regulation versions it uses (BRD-GR-05).
 import type { Domain, EntityType } from "./domain.js";
 import type { RuleType } from "./guardrails.js";
+import type { Role } from "./roles.js";
 
 export const VERTICALS = ["TECHNOLOGY", "BA", "DESIGN", "INFRASTRUCTURE", "TESTING"] as const;
 export type Vertical = (typeof VERTICALS)[number];
@@ -279,9 +280,23 @@ export function ruleApplies(rule: CatalogRule, ctx: PackContext): boolean {
   return true;
 }
 
-export function composeRules(ctx: PackContext, vertical?: Vertical): CatalogRule[] {
-  return CATALOG.filter((r) => (!vertical || r.vertical === vertical) && ruleApplies(r, ctx));
+export function composeRules(ctx: PackContext, vertical?: Vertical, from: CatalogRule[] = CATALOG): CatalogRule[] {
+  return from.filter((r) => (!vertical || r.vertical === vertical) && ruleApplies(r, ctx));
 }
+
+/** Who may edit and publish each vertical's master guardrails. The Tech Architect governs every vertical. */
+export const VERTICAL_OWNERS: Record<Vertical, readonly Role[]> = {
+  TECHNOLOGY: ["TechArchitect"],
+  INFRASTRUCTURE: ["TechArchitect", "InfraLead"],
+  BA: ["TechArchitect", "BALead"],
+  DESIGN: ["TechArchitect", "UIUXLead"],
+  TESTING: ["TechArchitect", "LeadTester"],
+};
+export function canManageVertical(roles: readonly Role[], vertical: Vertical): boolean {
+  return roles.some((r) => VERTICAL_OWNERS[vertical].includes(r));
+}
+/** Prefix for rule ids added in Krama (built-in ids are kept). */
+export const NEW_RULE_PREFIX: Record<Vertical, string> = { TECHNOLOGY: "TEC", INFRASTRUCTURE: "INF", BA: "BA", DESIGN: "DES", TESTING: "TST" };
 
 export function regulationsFor(rules: CatalogRule[]): Regulation[] {
   const ids = new Set(rules.flatMap((r) => r.sources ?? []));

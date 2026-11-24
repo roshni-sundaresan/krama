@@ -2,7 +2,7 @@ import { ConflictException, HttpStatus, Injectable, NotFoundException } from "@n
 import type { GuardrailPack, Prisma, Project } from "@prisma/client";
 import {
   BLUEPRINTS,
-  CATALOG,
+
   composeRules,
   DOMAIN_LABELS,
   ENTITY_LABELS,
@@ -28,7 +28,9 @@ import { PrismaService } from "../prisma/prisma.service.js";
 import { AuditService } from "../audit/audit.service.js";
 import { ProjectsService } from "../projects/projects.service.js";
 import { fail } from "../common/errors.js";
-import { footerText, renderFile, type FileFormat, type RenderDoc, type RenderSection } from "../common/render.js";
+import { footerText, renderFile, type FileFormat, type RenderDoc } from "../common/render.js";
+import { guardrailDoc } from "../common/guardrail-doc.js";
+import { GuardrailsService } from "../guardrails/guardrails.service.js";
 import type { AuthUser } from "../common/auth-user.js";
 
 export interface PackContent {
@@ -39,7 +41,6 @@ export interface PackContent {
   stack: { key: string; name: string; layers: Record<string, string> };
 }
 
-const LEVEL_LABEL = { NON_WAIVABLE: "Non-waivable", BLOCK: "Block", WARN: "Warn" } as const;
 
 export function projectFlags(p: Pick<Project, "government" | "existingProduction" | "accessibilityRequired">): ProjectFlag[] {
   const f: ProjectFlag[] = [];
@@ -76,6 +77,7 @@ export class PacksService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly projects: ProjectsService,
+    private readonly guardrails: GuardrailsService,
   ) {}
 
   stacks() {
@@ -89,14 +91,16 @@ export class PacksService {
   /** Preview of what a pack would contain for a stack and domain, before it is generated. */
   async preview(user: AuthUser, projectId: string, stackKey: string, domain: Domain, entityType: EntityType | null) {
     const p = await this.projects.getOrThrow(user, projectId);
-    return this.compose({ ...p, domain, entityType }, stackKey);
+    return this.compose({ ...p, domain, entityType }, stackKey, user.tenantId);
   }
 
-  private compose(p: Project, stackKey: string): PackContent {
+  /** Pack content from the live master guardrails (latest published version per vertical). */
+  private async compose(p: Project, stackKey: string, tenantId: string): Promise<PackContent> {
     const stack = findStack(stackKey);
     if (!stack) throw new NotFoundException(`Unknown stack ${stackKey}`);
     const ctx: PackContext = { domain: p.domain, entityType: p.entityType, platforms: p.platforms, stackTopics: stack.topics, flags: projectFlags(p) };
-    const rules = composeRules(ctx);
+    const { rules: master } = await this.guardrails.masterRules(tenantId);
+    const rules = composeRules(ctx, undefined, master);
     return {
       rules,
       blueprints: BLUEPRINTS,
@@ -139,7 +143,7 @@ export class PacksService {
   }
 
   private async generate(user: AuthUser, p: Project) {
-    const content = this.compose(p, p.stackKey!);
+    const content = await this.compose(p, p.stackKey!, user.tenantId);
     const version = ((await this.prisma.guardrailPack.aggregate({ where: { projectId: p.id }, _max: { version: true } }))._max.version ?? 0) + 1;
     const pack = await this.prisma.guardrailPack.create({
       data: {
@@ -234,23 +238,10 @@ export class PacksService {
       };
     } else {
       const rules = c.rules.filter((r) => (!opts.vertical || r.vertical === opts.vertical) && (!opts.topic || r.topic === opts.topic));
-      doc = this.guardrailDoc(`${project.name} — ${opts.topic ? TOPIC_LABELS[opts.topic] ?? opts.topic : opts.vertical ? VERTICAL_LABELS[opts.vertical] : "All"} guardrails`, meta, rules, c.regulations, footer);
+      doc = guardrailDoc(`${project.name} — ${opts.topic ? TOPIC_LABELS[opts.topic] ?? opts.topic : opts.vertical ? VERTICAL_LABELS[opts.vertical] : "All"} guardrails`, meta, rules, c.regulations, footer);
     }
     const name = `${base}_${opts.kind}${opts.vertical ? `_${opts.vertical.toLowerCase()}` : ""}${opts.topic ? `_${opts.topic}` : ""}`;
     return renderFile(doc, name, opts.format);
-  }
-
-  guardrailDoc(title: string, meta: [string, string][], rules: CatalogRule[], regs: Regulation[], footer: string): RenderDoc {
-    const topics = [...new Set(rules.map((r) => r.topic))];
-    const sections: RenderSection[] = [
-      { heading: "How to read this pack", blocks: [{ kind: "p", text: "Non-waivable rules can never have exceptions. Block rules stop the gate unless the Tech Architect approves a time-limited exception in Krama. Warn rules are recorded." }] },
-      ...topics.map((t) => ({
-        heading: TOPIC_LABELS[t] ?? t,
-        blocks: [{ kind: "table" as const, head: ["ID", "Guardrail", "Level", "Source"], widths: [11, 59, 13, 17], rows: rules.filter((r) => r.topic === t).map((r) => [r.id, `${r.title}. ${r.text}`, LEVEL_LABEL[r.level], (r.sources ?? []).join(", ") || "Idealake"]) }],
-      })),
-      { heading: "Regulations and standards used", blocks: regs.length ? [{ kind: "table", head: ["Source", "Version or date"], rows: regs.map((r) => [r.name, r.version]) }] : [{ kind: "p", text: "Idealake standards only.", muted: true }] },
-    ];
-    return { title, meta, sections, footer };
   }
 
   /** AGENTS.md: guardrails formatted for a developer's AI coding agent. */
@@ -287,8 +278,9 @@ export class PacksService {
 
   // ---------- library (master guardrails and blueprints) ----------
 
-  library(filter: { domain?: Domain; entityType?: EntityType; vertical?: Vertical }) {
-    const rules = CATALOG.filter((r) => {
+  async library(user: AuthUser, filter: { domain?: Domain; entityType?: EntityType; vertical?: Vertical }) {
+    const { rules: master, versions } = await this.guardrails.masterRules(user.tenantId);
+    const rules = master.filter((r) => {
       if (filter.vertical && r.vertical !== filter.vertical) return false;
       if (filter.domain && r.when?.domains && !r.when.domains.includes(filter.domain)) return false;
       if (filter.entityType && r.when?.entityTypes && !r.when.entityTypes.includes(filter.entityType)) return false;
@@ -299,13 +291,15 @@ export class PacksService {
       label: VERTICAL_LABELS[v],
       topics: [...new Set(rules.filter((r) => r.vertical === v).map((r) => r.topic))].map((t) => ({ topic: t, label: TOPIC_LABELS[t] ?? t, count: rules.filter((r) => r.vertical === v && r.topic === t).length })),
       ruleCount: rules.filter((r) => r.vertical === v).length,
+      version: versions[v],
       blueprint: BLUEPRINTS.find((b) => b.vertical === v) ?? null,
     }));
-    return { version: "Master v1.0", byVertical, rules, regulations: regulationsFor(rules) };
+    const version = filter.vertical ? `Master v${versions[filter.vertical]}` : "Master (latest published per vertical)";
+    return { version, byVertical, rules, regulations: regulationsFor(rules) };
   }
 
   async libraryDownload(user: AuthUser, opts: { kind: "guardrails" | "blueprints"; vertical: Vertical; domain?: Domain; topic?: string; format: FileFormat }) {
-    const lib = this.library({ vertical: opts.vertical, domain: opts.domain });
+    const lib = await this.library(user, { vertical: opts.vertical, domain: opts.domain });
     const footer = footerText({ project: "Master library", version: lib.version, user: user.email });
     const meta: [string, string][] = [["Vertical", VERTICAL_LABELS[opts.vertical]], ["Domain filter", opts.domain ? DOMAIN_LABELS[opts.domain] : "All domains"], ["Version", lib.version]];
     const doc: RenderDoc =
@@ -314,7 +308,7 @@ export class PacksService {
             const b = BLUEPRINTS.find((x) => x.vertical === opts.vertical)!;
             return { title: b.title, meta, sections: b.sections.map((s) => ({ heading: s.heading, blocks: [{ kind: "bullets" as const, items: s.items }] })), footer };
           })()
-        : this.guardrailDoc(`${VERTICAL_LABELS[opts.vertical]} guardrails${opts.topic ? ` — ${TOPIC_LABELS[opts.topic] ?? opts.topic}` : ""}`, meta, lib.rules.filter((r) => !opts.topic || r.topic === opts.topic), lib.regulations, footer);
+        : guardrailDoc(`${VERTICAL_LABELS[opts.vertical]} guardrails${opts.topic ? ` — ${TOPIC_LABELS[opts.topic] ?? opts.topic}` : ""}`, meta, lib.rules.filter((r) => !opts.topic || r.topic === opts.topic), lib.regulations, footer);
     await this.audit.record({ tenantId: user.tenantId, actorId: user.id, action: "library.downloaded", entityType: "library", entityId: opts.vertical, data: opts });
     const name = `Krama_${opts.vertical.toLowerCase()}_${opts.kind}${opts.topic ? `_${opts.topic}` : ""}${opts.domain ? `_${opts.domain.toLowerCase()}` : ""}`;
     return renderFile(doc, name, opts.format);

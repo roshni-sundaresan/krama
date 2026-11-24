@@ -8,7 +8,7 @@ import type { PackRule } from "@/lib/types";
 
 interface Library {
   version: string;
-  byVertical: { vertical: Vertical; label: string; topics: { topic: string; label: string; count: number }[]; ruleCount: number; blueprint: { title: string; sections: { heading: string; items: string[] }[] } }[];
+  byVertical: { vertical: Vertical; label: string; topics: { topic: string; label: string; count: number }[]; ruleCount: number; version: number; blueprint: { title: string; sections: { heading: string; items: string[] }[] } }[];
   rules: PackRule[];
   regulations: { id: string; name: string; version: string }[];
 }
@@ -30,7 +30,7 @@ export default async function LibraryPage({ searchParams }: { searchParams: SP }
       <PageHead eyebrow="Overview · master library" title="Blueprints & guardrails">
         <Chip tone="info">{lib.version}</Chip>
       </PageHead>
-      <p className="muted" style={{ margin: "-10px 0 0" }}>The master rules Krama composes each project&apos;s pack from. Project packs are fixed at the version they were approved with.</p>
+      <p className="muted" style={{ margin: "-10px 0 0" }}>The master rules Krama composes each project&apos;s pack from. Project packs are fixed at the version they were approved with. Leads publish new versions in <Link href="/guardrails">Guardrail management</Link>.</p>
 
       <div className="between">
         <div className="tabs" role="tablist" aria-label="Vertical">
@@ -52,7 +52,7 @@ export default async function LibraryPage({ searchParams }: { searchParams: SP }
       <div className="grid2" style={{ gridTemplateColumns: "minmax(0,2fr) minmax(0,1fr)" }}>
         <section className="card flush">
           <div className="between" style={{ padding: "16px 20px" }}>
-            <h2>{v.label} guardrails ({rules.length})</h2>
+            <h2>{v.label} guardrails v{v.version} ({rules.length})</h2>
             <span className="row" style={{ gap: 6 }}>
               <DownloadMenu items={[{ label: "Word", hint: ".docx", path: dl("guardrails", "docx") }, { label: "PDF", hint: ".pdf", path: dl("guardrails", "pdf") }]} />
             </span>

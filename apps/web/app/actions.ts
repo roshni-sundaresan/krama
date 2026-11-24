@@ -232,3 +232,63 @@ export async function updateUser(id: string, fd: FormData) {
     patch(`/access/users/${id}`, { roles: fd.has("rolesSent") ? fd.getAll("roles").map(String) : undefined, active: active ? active === "true" : undefined }),
   );
 }
+
+// ---------- guardrail management ----------
+export async function createGuardrailDraft(vertical: string) {
+  let id = "";
+  try {
+    id = (await post<{ id: string }>(`/guardrails/${vertical}/drafts`)).id;
+  } catch (e) {
+    redirect(`/guardrails?error=${encodeURIComponent(e instanceof Error ? e.message : String(e))}`);
+  }
+  redirect(`/guardrails/${id}?ok=${encodeURIComponent("New draft started from the live rules")}`);
+}
+
+/** Rule rows are posted as r<i>_<field>; rows with no title are ignored (empty "add a rule" rows). */
+function rulesFromForm(fd: FormData) {
+  const n = Number(fd.get("n") ?? 0);
+  const rules = [];
+  for (let i = 0; i < n; i++) {
+    const title = str(fd, `r${i}_title`);
+    if (!title) continue;
+    rules.push({
+      id: str(fd, `r${i}_id`) || undefined,
+      topic: str(fd, `r${i}_topic`),
+      title,
+      text: str(fd, `r${i}_text`),
+      level: str(fd, `r${i}_level`),
+      sources: str(fd, `r${i}_sources`).split(",").map((s) => s.trim()).filter(Boolean),
+      retired: bool(fd, `r${i}_retired`) || undefined,
+    });
+  }
+  return rules;
+}
+
+export async function saveGuardrailDraft(id: string, fd: FormData) {
+  await mutate(`/guardrails/${id}`, "Draft saved", () => patch(`/guardrails/versions/${id}`, { changeNote: str(fd, "changeNote"), rules: rulesFromForm(fd) }));
+}
+
+export async function uploadGuardrailDocument(id: string, fd: FormData) {
+  const file = fd.get("file");
+  await mutate(`/guardrails/${id}`, "Document uploaded and scanned", async () => {
+    if (!(file instanceof File) || file.size === 0) throw new Error("Choose a Word (.docx) or PDF file");
+    const body = new FormData();
+    body.set("file", file, file.name);
+    await post(`/guardrails/versions/${id}/document`, body);
+  });
+}
+
+export async function publishGuardrails(id: string, fd: FormData) {
+  await mutate(`/guardrails/${id}`, "Published. New and regenerated packs now use this version.", () => post(`/guardrails/versions/${id}/publish`, { changeNote: str(fd, "changeNote") }));
+}
+
+export async function discardGuardrailDraft(id: string) {
+  let error: string | undefined;
+  try {
+    await post(`/guardrails/versions/${id}/discard`);
+  } catch (e) {
+    error = e instanceof Error ? e.message : String(e);
+  }
+  revalidatePath("/guardrails");
+  redirect(error ? `/guardrails/${id}?error=${encodeURIComponent(error)}` : "/guardrails?ok=Draft+discarded");
+}

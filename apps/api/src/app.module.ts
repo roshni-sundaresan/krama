@@ -13,6 +13,7 @@ import { SourcesModule } from "./sources/sources.module.js";
 import { BrdModule } from "./brd/brd.module.js";
 import { PacksModule } from "./packs/packs.module.js";
 import { DevModule } from "./dev/dev.module.js";
+import { GuardrailsModule } from "./guardrails/guardrails.module.js";
 
 @Global()
 @Module({ providers: [{ provide: APP_CONFIG, useFactory: () => loadConfig() }], exports: [APP_CONFIG] })
@@ -37,7 +38,7 @@ class HealthController {
 }
 
 @Module({
-  imports: [ConfigModule, PrismaModule, AuditModule, AuthModule, StorageModule, TemporalModule, AccessModule, ProjectsModule, SourcesModule, BrdModule, PacksModule, DevModule],
+  imports: [ConfigModule, PrismaModule, AuditModule, AuthModule, StorageModule, TemporalModule, AccessModule, ProjectsModule, SourcesModule, BrdModule, GuardrailsModule, PacksModule, DevModule],
   controllers: [HealthController],
 })
 export class AppModule {}

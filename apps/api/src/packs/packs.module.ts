@@ -75,8 +75,8 @@ export class PacksController {
   }
 
   @Get("library")
-  library(@Query(new ZodPipe(LibraryQuery)) q: z.infer<typeof LibraryQuery>) {
-    return this.packs.library(q);
+  library(@CurrentUser() user: AuthUser, @Query(new ZodPipe(LibraryQuery)) q: z.infer<typeof LibraryQuery>) {
+    return this.packs.library(user, q);
   }
 
   @Get("library/download")

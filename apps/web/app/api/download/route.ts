@@ -7,6 +7,8 @@ const ALLOWED = [
   /^\/projects\/[\w-]+\/packs\/[\w-]+\/download\?[\w=&%.-]*$/,
   /^\/projects\/[\w-]+\/sources\/[\w-]+\/file$/,
   /^\/library\/download\?[\w=&%.-]*$/,
+  /^\/guardrails\/versions\/[\w-]+\/download\?format=(docx|pdf)$/,
+  /^\/guardrails\/versions\/[\w-]+\/document$/,
 ];
 
 export async function GET(req: NextRequest) {

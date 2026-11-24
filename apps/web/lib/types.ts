@@ -62,3 +62,12 @@ export interface Pack {
   approvedAt: string | null; decisionNote: string | null; createdAt: string;
 }
 export interface Adr { id: string; number: number; title: string; context: string; decision: string; consequences: string; createdAt: string }
+export interface GuardrailVersionSummary {
+  id: string; vertical: string; version: number; status: "DRAFT" | "PUBLISHED" | "SUPERSEDED" | "DISCARDED"; changeNote: string;
+  ruleCount: number; retiredCount: number; document: { name: string; type: string } | null;
+  createdBy: string; publishedBy: string | null; publishedAt: string | null; createdAt: string;
+}
+export interface GuardrailVersionDetail extends GuardrailVersionSummary {
+  rules: (Omit<PackRule, "sources"> & { sources?: string[]; retired?: boolean })[];
+  canManage: boolean;
+}
