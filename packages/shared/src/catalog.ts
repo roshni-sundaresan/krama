@@ -168,10 +168,10 @@ export const CATALOG: CatalogRule[] = [
 
   // ---------------- BA ----------------
   { id: "IN-G01", vertical: "BA", topic: "ba-intake", level: "NON_WAIVABLE", title: "Mask before AI", text: "Documents marked as containing personal data are masked before any AI processing." },
-  { id: "IN-G02", vertical: "BA", topic: "ba-intake", level: "BLOCK", title: "Intake form and sign-off owner", text: "Intake form complete, with the client sign-off owner named." },
-  { id: "IN-G03", vertical: "BA", topic: "ba-intake", level: "BLOCK", title: "SOW uploaded", text: "The SOW is in the intake pack." },
-  { id: "IN-G04", vertical: "BA", topic: "ba-intake", level: "BLOCK", title: "MOM or client document", text: "At least one MOM or client requirement document is uploaded or imported." },
-  { id: "IN-G05", vertical: "BA", topic: "ba-intake", level: "BLOCK", title: "Every document tagged", text: "Each document is tagged with type, version, date and provider." },
+  { id: "IN-G02", vertical: "BA", topic: "ba-intake", level: "WARN", title: "Intake form and sign-off owner", text: "Intake form complete, with the client sign-off owner named." },
+  { id: "IN-G03", vertical: "BA", topic: "ba-intake", level: "WARN", title: "SOW uploaded", text: "The SOW is in the intake pack." },
+  { id: "IN-G04", vertical: "BA", topic: "ba-intake", level: "BLOCK", title: "At least one input document", text: "At least one SOW, MOM or client requirement document is uploaded or imported." },
+  { id: "IN-G05", vertical: "BA", topic: "ba-intake", level: "WARN", title: "Every document tagged", text: "Each document is tagged with type, version, date and provider." },
   { id: "BA-G01", vertical: "BA", topic: "ba-requirements", level: "NON_WAIVABLE", title: "Every requirement has a source", text: "Each requirement links to an iDhi meeting, MOM or document." },
   { id: "BA-G05", vertical: "BA", topic: "ba-requirements", level: "BLOCK", title: "Given / When / Then", text: "Every functional requirement has at least one acceptance criterion in Given / When / Then." },
   { id: "BA-G07", vertical: "BA", topic: "ba-requirements", level: "BLOCK", title: "No blocking open questions", text: "No open question marked Blocking is unresolved at approval." },

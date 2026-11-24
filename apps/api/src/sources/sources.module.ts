@@ -149,20 +149,24 @@ export class SourcesService {
     return { item, body: await this.storage.get(item.storageKey) };
   }
 
-  /** Intake readiness (IN-G01 to IN-G05). */
+  /** Intake readiness: IN-G01 and IN-G04 block BRD drafting; IN-G02, IN-G03 and IN-G05 are advice. */
   async readiness(user: AuthUser, projectId: string): Promise<{ ready: boolean; rules: ReadinessRule[] }> {
     const p = await this.projects.getOrThrow(user, projectId);
     const items = await this.prisma.sourceItem.findMany({ where: { projectId } });
     const unmasked = items.filter((i) => i.personalData && !i.maskingConfirmedAt);
     const untagged = items.filter((i) => !i.docType || !i.version || !i.docDate || !i.provider);
+    const hasDoc = items.length > 0;
+    const hasSow = items.some((i) => i.docType === "SOW");
+    // Only two rules block BRD drafting: masking (never waivable) and at least one input document.
+    // The rest are advice: shown on the intake page, but they do not stop drafting.
     const rules: ReadinessRule[] = [
       { id: "IN-G01", title: "Personal data masked before AI", level: "NON_WAIVABLE", passed: unmasked.length === 0, note: unmasked.length ? `${unmasked.length} to review` : "Pass" },
-      { id: "IN-G02", title: "Intake form and sign-off owner", level: "BLOCK", passed: Boolean(p.clientSignoffOwner && p.platforms.length), note: p.clientSignoffOwner ? "Pass" : "Name the sign-off owner" },
-      { id: "IN-G03", title: "SOW uploaded", level: "BLOCK", passed: items.some((i) => i.docType === "SOW"), note: items.some((i) => i.docType === "SOW") ? "Pass" : "Upload and tag the SOW" },
-      { id: "IN-G04", title: "MOM or client document", level: "BLOCK", passed: items.some((i) => i.docType === "MOM" || i.docType === "PROCESS" || i.docType === "POLICY"), note: "At least one" },
-      { id: "IN-G05", title: "Every document tagged", level: "BLOCK", passed: untagged.length === 0 && items.length > 0, note: untagged.length ? `${untagged.length} untagged` : "Pass" },
+      { id: "IN-G04", title: "At least one SOW, MOM or client document", level: "BLOCK", passed: hasDoc, note: hasDoc ? "Pass" : "Upload or import one document" },
+      { id: "IN-G02", title: "Intake form and sign-off owner", level: "WARN", passed: Boolean(p.clientSignoffOwner && p.platforms.length), note: p.clientSignoffOwner ? "Add platforms" : "Name the sign-off owner" },
+      { id: "IN-G03", title: "SOW uploaded", level: "WARN", passed: hasSow, note: hasSow ? "Pass" : "Recommended" },
+      { id: "IN-G05", title: "Every document tagged", level: "WARN", passed: untagged.length === 0 && hasDoc, note: untagged.length ? `${untagged.length} untagged` : "Recommended" },
     ];
-    return { ready: rules.every((r) => r.passed), rules };
+    return { ready: rules.every((r) => r.passed || r.level === "WARN"), rules };
   }
 }
 

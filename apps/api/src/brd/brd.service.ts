@@ -72,7 +72,7 @@ export class BrdService {
   async startDraft(user: AuthUser, projectId: string) {
     const project = await this.projects.getOrThrow(user, projectId);
     const readiness = await this.sources.readiness(user, projectId);
-    const failing = readiness.rules.filter((r) => !r.passed);
+    const failing = readiness.rules.filter((r) => !r.passed && r.level !== "WARN");
     if (failing.length) {
       const first = failing[0]!;
       if (first.id === "IN-G01") {

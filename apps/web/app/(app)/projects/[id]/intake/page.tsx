@@ -27,13 +27,14 @@ export default async function IntakePage({ params, searchParams }: { params: Pro
   ]);
   const imported = new Set(sources.map((s) => s.externalRef).filter(Boolean));
   const openMeetings = meetings.filter((m) => !imported.has(m.id));
-  const failing = readiness.rules.filter((r) => !r.passed);
+  const failing = readiness.rules.filter((r) => !r.passed && r.level !== "WARN");
+  const advice = readiness.rules.filter((r) => !r.passed && r.level === "WARN");
   const team = (role: string) => p.members.filter((m) => m.user.roles.includes(role as never)).map((m) => m.user.name).join(", ") || "Not assigned";
 
   return (
     <>
       <PageHead eyebrow={`${p.name} · Requirements`} title="Intake pack">
-        <Chip tone={readiness.ready ? "ok" : "warn"}>{readiness.ready ? "Ready for BRD drafting" : `Readiness: ${failing.length} item${failing.length === 1 ? "" : "s"} needed`}</Chip>
+        <Chip tone={readiness.ready ? "ok" : "warn"}>{readiness.ready ? `Ready for BRD drafting${advice.length ? ` · ${advice.length} suggestion${advice.length === 1 ? "" : "s"}` : ""}` : `Readiness: ${failing.length} item${failing.length === 1 ? "" : "s"} needed`}</Chip>
         {can(user, "brd.draft") &&
           (brd.document ? (
             <Link href={`/projects/${id}/brd`} className="btn primary">Open BRD</Link>
@@ -70,13 +71,13 @@ export default async function IntakePage({ params, searchParams }: { params: Pro
         </section>
 
         <section className="card col">
-          <div className="between"><h2>Readiness check</h2><span className="tiny muted">Intake rules IN-G01 to IN-G05</span></div>
+          <div className="between"><h2>Readiness check</h2><span className="tiny muted">2 required · 3 recommended</span></div>
           <table className="t">
             <tbody>
               {readiness.rules.map((r) => (
                 <tr key={r.id}>
                   <td className="small"><b>{r.id}</b> {r.title}<div className="tiny muted">{LEVEL_LABEL[r.level]}</div></td>
-                  <td style={{ textAlign: "right" }}><Chip tone={r.passed ? "ok" : r.level === "NON_WAIVABLE" ? "block" : "warn"}>{r.passed ? "Pass" : r.note}</Chip></td>
+                  <td style={{ textAlign: "right" }}><Chip tone={r.passed ? "ok" : r.level === "NON_WAIVABLE" ? "block" : r.level === "WARN" ? "grey" : "warn"}>{r.passed ? "Pass" : r.note}</Chip></td>
                 </tr>
               ))}
             </tbody>
