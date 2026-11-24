@@ -29,6 +29,17 @@ infra/              docker-compose.yml for a single machine
 docs/               architecture.md
 ```
 
+## Checks on every pull request
+
+`.github/workflows/ci.yml` runs on every pull request and on `main`:
+
+- Node: lint, typecheck, unit tests, build, dependency audit (high and critical)
+- AI worker: ruff and pytest
+- Secret scan: gitleaks
+
+In GitHub, protect `main`: require a pull request with one approving review, and require the three CI
+jobs to pass before merging.
+
 ## Run it on a Mac (Docker Desktop)
 
 You need Docker Desktop 4.x and about 6 GB of free memory for Docker.

@@ -123,6 +123,7 @@ export function footerText(opts: { project: string; version: string; user: strin
 
 // ---------- PDF ----------
 // Built-in Helvetica (WinAnsi); characters outside it are replaced with plain equivalents.
+// eslint-disable-next-line no-control-regex, no-irregular-whitespace -- deliberate: strips characters PDF Helvetica cannot draw
 const PDF_SUBS: [RegExp, string][] = [[/≥/g, ">="], [/≤/g, "<="], [/[→⇒]/g, "->"], [/₹/g, "Rs "], [/[“”]/g, '"'], [/[‘’]/g, "'"], [/…/g, "..."], [/[^\x09\x0A\x0D\x20-\x7E -ÿ–—•·€]/g, "?"]];
 const pdfText = (s: string) => PDF_SUBS.reduce((t, [re, r]) => t.replace(re, r), s);
 
